@@ -1,0 +1,972 @@
+# Blood Bank Management System (BBMS) – Detailed Implementation Document
+
+## Table of Contents
+
+1. Introduction  
+   1.1 Purpose  
+   1.2 Scope  
+   1.3 Objectives  
+   
+2. System Architecture  
+   2.1 Microservice Architecture Overview  
+   2.2 Microservices List and Responsibilities  
+   2.3 Technology Stack  
+   
+3. Detailed Design  
+   3.1 Microservice Communication  
+   3.2 Database Design  
+   3.3 Role-Based Authentication and Authorization (JWT)  
+   3.4 Service Design
+
+4. API Gateway and Load Balancing
+
+5. Security and Authentication  
+   5.1 JWT Token-Based Authentication  
+   5.2 Role-Based Access Control (RBAC)
+
+6. Error Handling and Logging
+
+7. Reporting and Analytics
+
+8. Deployment and Scaling
+
+9. Testing and Quality Assurance
+
+---
+
+## 1. Introduction
+
+### 1.1 Purpose
+This document outlines the design and implementation of a **Blood Bank Management System (BBMS)** using a microservice architecture. The system aims to automate the management of blood donations, inventory, and distribution to hospitals. The platform ensures efficient donor registration, tracking of donations, management of blood inventory, and handling hospital requests.
+
+### 1.2 Scope
+This BBMS will handle the following:  
+- Donor registration and profile management  
+- Blood donation and inventory tracking  
+- Hospital requests processing  
+- Reporting and analytics for insights  
+- Secure, role-based access for users (Admin, Hospital Staff, Donor)
+
+### 1.3 Objectives  
+- Streamline the process of blood collection, storage, and distribution  
+- Ensure high-quality control standards in blood inventory  
+- Provide real-time visibility of blood stock to hospitals  
+- Offer a secure, scalable platform using .NET and MS SQL Server
+
+---
+
+## 2. System Architecture
+
+### 2.1 Microservice Architecture Overview
+The system will be developed using a **microservice architecture** to break down complex processes into smaller, independently deployable services. Each service will have its own domain and responsibilities, ensuring loose coupling and high cohesion.
+
+The architecture consists of the following key components:
+- **API Gateway:** Acts as a reverse proxy and routes requests to the relevant microservices.
+- **Microservices:** Each microservice handles a specific domain such as donor registration, blood inventory, hospital requests, etc.
+- **Database:** A centralized MS SQL Server database for each microservice to store and manage data related to its domain.
+- **Service Discovery:** For dynamic location and scaling of microservices.
+
+### 2.2 Microservices List and Responsibilities
+1. **Donor Service**  
+   - Handles donor registration, updates, and management of donor profiles.  
+   - Tracks donation history and donor eligibility.
+
+2. **Inventory Service**  
+   - Manages blood donations, types, storage, and expiration of blood units.  
+   - Updates the stock and keeps track of blood unit availability.
+
+3. **Request Service**  
+   - Handles hospital requests for blood units.  
+   - Manages priority levels and ensures timely processing of requests.
+
+4. **Reporting Service**  
+   - Generates analytical reports for inventory levels, donation patterns, and request fulfillment metrics.
+
+5. **Authentication and Authorization Service**  
+   - Provides role-based authentication using JWT tokens.  
+   - Manages user roles: Admin, Hospital Staff, and Donor.
+
+### 2.3 Technology Stack
+- **Backend:** .NET Core 7.0 (C#)  
+- **Frontend:** Angular or React  
+- **Database:** MS SQL Server  
+- **Authentication:** JWT (JSON Web Tokens)  
+- **Communication between Microservices:** RESTful APIs, gRPC  
+- **API Gateway:** Ocelot  
+- **Service Discovery:** Consul or Eureka  
+- **Containerization:** Docker, Kubernetes for orchestration
+
+---
+
+## 3. Detailed Design
+
+### 3.1 Microservice Communication
+Microservices will communicate using RESTful APIs for external requests, and gRPC or messaging (e.g., RabbitMQ) for internal communication. All requests will pass through the API Gateway for authentication and routing.
+
+### 3.2 Database Design
+Each microservice will have its own database schema to ensure data autonomy. Below are the key tables for each service:
+
+#### **Donor Service:**
+- `Donors`: Contains donor personal details (ID, Name, Age, Blood Type, Contact Information).
+- `DonationHistory`: Tracks donation records with donor ID, donation date, and blood type.
+
+#### **Inventory Service:**
+- `BloodInventory`: Manages blood units with blood type, volume, donation date, expiration date, and storage location.
+- `BloodTransactions`: Tracks movements of blood units (additions, removals, transfers).
+
+#### **Request Service:**
+- `HospitalRequests`: Stores hospital requests for specific blood types, quantities, priority levels, and fulfillment status.
+- `RequestDetails`: Contains details of each request, including timestamps and request fulfillment history.
+
+### 3.3 Role-Based Authentication and Authorization (JWT)
+#### Authentication Flow:
+1. A user (donor, hospital staff, or admin) sends login credentials to the **Authentication Service**.
+2. The service validates credentials and generates a **JWT token**.
+3. The token contains role-based claims (Admin, Donor, Hospital Staff).
+4. The API Gateway forwards requests to microservices after verifying the token.
+
+#### Token Structure:
+- Header: Algorithm type and token type.
+- Payload: User claims, roles (e.g., `admin`, `hospital`, `donor`), and expiry.
+- Signature: Encrypted using a secret key to ensure authenticity.
+
+---
+
+## 4. API Gateway and Load Balancing
+**Ocelot** will be used as the API Gateway to handle requests from clients (donors, hospitals, admins). It will provide the following:
+- Request routing to relevant microservices.
+- JWT token validation.
+- Load balancing across multiple instances of microservices.
+- Caching and rate-limiting for better performance.
+
+---
+
+## 5. Security and Authentication
+
+### 5.1 JWT Token-Based Authentication
+- **Login Flow**: Users log in, and the authentication service generates JWT tokens based on the user’s credentials.
+- **Token Validation**: Each request carries a JWT token, which is validated by the API Gateway to ensure the user is authenticated.
+
+### 5.2 Role-Based Access Control (RBAC)
+- **Admin**: Full access to all microservices and resources.
+- **Hospital Staff**: Access to Request Service and Inventory Service for tracking available blood units and making requests.
+- **Donor**: Access to Donor Service for managing personal information and donation history.
+
+---
+
+## 6. Error Handling and Logging
+- **Centralized Error Handling**: Each microservice will implement global error handlers.
+- **Logging**: Structured logging using **Serilog** or **NLog** to log requests, errors, and events across microservices. Logs will be aggregated for analysis.
+
+---
+
+## 7. Reporting and Analytics
+The Reporting Service will generate reports such as:
+- Blood inventory levels
+- Donor activity trends
+- Request fulfillment reports
+- Expiry of blood units
+Analytics will be run using SQL queries and reporting tools integrated with the database.
+
+---
+
+## 8. Deployment and Scaling
+- **Docker** will be used to containerize each microservice.
+- **Kubernetes** will handle orchestration, auto-scaling, and service discovery.
+- **CI/CD Pipelines** using Azure DevOps or GitHub Actions for automated deployment.
+
+---
+
+## 9. Testing and Quality Assurance
+- **Unit Tests** for each microservice using XUnit or NUnit.
+- **Integration Tests** to validate communication between microservices.
+- **Load Testing** to ensure the system scales under load.
+- **API Testing** using Postman or Swagger for contract validation.
+
+---
+
+This document outlines the detailed architecture and design for the Blood Bank Management System (BBMS). Each microservice is responsible for a specific domain and interacts securely using JWT-based authentication and REST APIs. The system is built for scalability and reliability, ensuring the streamlined operation of blood donation, storage, and distribution services.
+
+
+
+
+To implement the Blood Bank Management System (BBMS) using .NET Core, EF Core (Entity Framework Core), and MS SQL Server, we will follow a step-by-step process. Below are the key steps and corresponding code snippets for each microservice and API. This implementation will focus on the following:
+
+1. **Donor Service**: CRUD operations for donor management and tracking donations.
+2. **Inventory Service**: Managing blood units, tracking availability, and expirations.
+3. **Request Service**: Handling hospital requests for blood units.
+4. **Authentication Service**: JWT-based authentication and role-based access control (RBAC).
+
+### Prerequisites
+
+- **.NET Core SDK** (version 6.0 or 7.0)
+- **SQL Server** (Local or Cloud-based)
+- **Entity Framework Core**
+- **Postman** (for API testing)
+- **Swagger** (for API documentation)
+
+---
+
+### Step 1: Create a .NET Core Solution
+
+1. Create a new .NET Core solution with individual projects for each microservice:
+    ```bash
+    dotnet new sln -n BloodBankManagementSystem
+    mkdir Services
+    cd Services
+    dotnet new webapi -n DonorService
+    dotnet new webapi -n InventoryService
+    dotnet new webapi -n RequestService
+    dotnet new webapi -n AuthService
+    ```
+
+2. Add the projects to the solution:
+    ```bash
+    dotnet sln add DonorService/InventoryService/RequestService/AuthService
+    ```
+
+3. Install necessary dependencies for each project:
+    ```bash
+    dotnet add DonorService package Microsoft.EntityFrameworkCore.SqlServer
+    dotnet add InventoryService package Microsoft.EntityFrameworkCore.SqlServer
+    dotnet add RequestService package Microsoft.EntityFrameworkCore.SqlServer
+    dotnet add AuthService package Microsoft.EntityFrameworkCore.SqlServer
+    dotnet add AuthService package Microsoft.AspNetCore.Authentication.JwtBearer
+    ```
+
+---
+
+### Step 2: Set Up Entity Framework Core
+
+#### 1. Donor Service
+
+**Model:**
+
+```csharp
+public class Donor
+{
+    public int DonorId { get; set; }
+    public string Name { get; set; }
+    public string BloodType { get; set; }
+    public DateTime LastDonationDate { get; set; }
+    public string ContactInformation { get; set; }
+}
+
+public class DonationHistory
+{
+    public int DonationId { get; set; }
+    public int DonorId { get; set; }
+    public Donor Donor { get; set; }
+    public DateTime DonationDate { get; set; }
+    public string BloodType { get; set; }
+}
+```
+
+**DbContext:**
+
+```csharp
+public class DonorContext : DbContext
+{
+    public DbSet<Donor> Donors { get; set; }
+    public DbSet<DonationHistory> DonationHistories { get; set; }
+
+    public DonorContext(DbContextOptions<DonorContext> options) : base(options)
+    {
+    }
+}
+```
+
+**Controller:**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class DonorController : ControllerBase
+{
+    private readonly DonorContext _context;
+
+    public DonorController(DonorContext context)
+    {
+        _context = context;
+    }
+
+    // Get all donors
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Donor>>> GetDonors()
+    {
+        return await _context.Donors.ToListAsync();
+    }
+
+    // Get donor by ID
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Donor>> GetDonor(int id)
+    {
+        var donor = await _context.Donors.FindAsync(id);
+        if (donor == null)
+        {
+            return NotFound();
+        }
+        return donor;
+    }
+
+    // Add a new donor
+    [HttpPost]
+    public async Task<ActionResult<Donor>> PostDonor(Donor donor)
+    {
+        _context.Donors.Add(donor);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetDonor), new { id = donor.DonorId }, donor);
+    }
+
+    // Update donor information
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutDonor(int id, Donor donor)
+    {
+        if (id != donor.DonorId)
+        {
+            return BadRequest();
+        }
+        _context.Entry(donor).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Delete donor
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteDonor(int id)
+    {
+        var donor = await _context.Donors.FindAsync(id);
+        if (donor == null)
+        {
+            return NotFound();
+        }
+        _context.Donors.Remove(donor);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+}
+```
+
+**Startup Configuration:**
+
+```csharp
+public class Startup
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddDbContext<DonorContext>(options =>
+            options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+        services.AddControllers();
+        services.AddSwaggerGen();
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        app.UseSwagger();
+        app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Donor API v1"));
+
+        app.UseRouting();
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+        });
+    }
+}
+```
+
+---
+
+#### 2. Inventory Service
+
+**Model:**
+
+```csharp
+public class BloodUnit
+{
+    public int BloodUnitId { get; set; }
+    public string BloodType { get; set; }
+    public int Quantity { get; set; }
+    public DateTime ExpirationDate { get; set; }
+}
+```
+
+**DbContext:**
+
+```csharp
+public class InventoryContext : DbContext
+{
+    public DbSet<BloodUnit> BloodUnits { get; set; }
+
+    public InventoryContext(DbContextOptions<InventoryContext> options) : base(options)
+    {
+    }
+}
+```
+
+**Controller:**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class InventoryController : ControllerBase
+{
+    private readonly InventoryContext _context;
+
+    public InventoryController(InventoryContext context)
+    {
+        _context = context;
+    }
+
+    // Get all blood units
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodUnit>>> GetBloodUnits()
+    {
+        return await _context.BloodUnits.ToListAsync();
+    }
+
+    // Get blood unit by ID
+    [HttpGet("{id}")]
+    public async Task<ActionResult<BloodUnit>> GetBloodUnit(int id)
+    {
+        var unit = await _context.BloodUnits.FindAsync(id);
+        if (unit == null)
+        {
+            return NotFound();
+        }
+        return unit;
+    }
+
+    // Add new blood unit
+    [HttpPost]
+    public async Task<ActionResult<BloodUnit>> PostBloodUnit(BloodUnit unit)
+    {
+        _context.BloodUnits.Add(unit);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetBloodUnit), new { id = unit.BloodUnitId }, unit);
+    }
+
+    // Update blood unit
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutBloodUnit(int id, BloodUnit unit)
+    {
+        if (id != unit.BloodUnitId)
+        {
+            return BadRequest();
+        }
+        _context.Entry(unit).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Delete blood unit
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteBloodUnit(int id)
+    {
+        var unit = await _context.BloodUnits.FindAsync(id);
+        if (unit == null)
+        {
+            return NotFound();
+        }
+        _context.BloodUnits.Remove(unit);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+}
+```
+
+---
+
+#### 3. Request Service
+
+**Model:**
+
+```csharp
+public class HospitalRequest
+{
+    public int RequestId { get; set; }
+    public string BloodType { get; set; }
+    public int Quantity { get; set; }
+    public string HospitalName { get; set; }
+    public DateTime RequestDate { get; set; }
+    public bool Fulfilled { get; set; }
+}
+```
+
+**DbContext:**
+
+```csharp
+public class RequestContext : DbContext
+{
+    public DbSet<HospitalRequest> HospitalRequests { get; set; }
+
+    public RequestContext(DbContextOptions<RequestContext> options) : base(options)
+    {
+    }
+}
+```
+
+**Controller:**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class RequestController : ControllerBase
+{
+    private readonly RequestContext _context;
+
+    public RequestController(RequestContext context)
+    {
+        _context = context;
+    }
+
+    // Get all hospital requests
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<HospitalRequest>>> GetRequests()
+    {
+        return await _context.HospitalRequests.ToListAsync();
+    }
+
+    // Get request by ID
+    [HttpGet("{id}")]
+    public async Task<ActionResult<HospitalRequest>> GetRequest(int id)
+    {
+        var request = await _context.HospitalRequests.FindAsync(id);
+        if (request == null)
+        {
+
+
+            return NotFound();
+        }
+        return request;
+    }
+
+    // Add new request
+    [HttpPost]
+    public async Task<ActionResult<HospitalRequest>> PostRequest(HospitalRequest request)
+    {
+        _context.HospitalRequests.Add(request);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetRequest), new { id = request.RequestId }, request);
+    }
+
+    // Update request
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutRequest(int id, HospitalRequest request)
+    {
+        if (id != request.RequestId)
+        {
+            return BadRequest();
+        }
+        _context.Entry(request).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // Delete request
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteRequest(int id)
+    {
+        var request = await _context.HospitalRequests.FindAsync(id);
+        if (request == null)
+        {
+            return NotFound();
+        }
+        _context.HospitalRequests.Remove(request);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+}
+```
+
+---
+
+#### 4. Authentication and JWT Setup
+
+For authentication, we will set up a service that handles user login and issues JWT tokens based on user roles.
+
+**Startup Configuration:**
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = Configuration["Jwt:Issuer"],
+            ValidAudience = Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+        };
+    });
+
+    services.AddControllers();
+}
+```
+
+**JWT Controller:**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class AuthController : ControllerBase
+{
+    private readonly IConfiguration _config;
+
+    public AuthController(IConfiguration config)
+    {
+        _config = config;
+    }
+
+    [HttpPost("login")]
+    public IActionResult Login([FromBody] UserLogin userLogin)
+    {
+        var user = Authenticate(userLogin);
+        if (user != null)
+        {
+            var token = GenerateToken(user);
+            return Ok(new { token });
+        }
+        return Unauthorized();
+    }
+
+    private string GenerateToken(User user)
+    {
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        };
+
+        var token = new JwtSecurityToken(_config["Jwt:Issuer"],
+          _config["Jwt:Audience"],
+          claims,
+          expires: DateTime.Now.AddMinutes(120),
+          signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private User Authenticate(UserLogin userLogin)
+    {
+        // In production, fetch the user from a database
+        var users = new List<User>
+        {
+            new User { Username = "admin", Password = "password", Role = "Admin" },
+            new User { Username = "hospital", Password = "password", Role = "Hospital" },
+            new User { Username = "donor", Password = "password", Role = "Donor" }
+        };
+
+        var user = users.SingleOrDefault(u => u.Username == userLogin.Username && u.Password == userLogin.Password);
+        return user;
+    }
+}
+```
+
+---
+
+### Step 3: Testing with Swagger and Postman
+
+- **Swagger:** Launch each microservice and test the APIs through Swagger UI (`/swagger`).
+- **Postman:** Test each API with different roles (admin, donor, hospital) by providing JWT tokens in the Authorization header.
+
+---
+
+### Step 4: Run Migrations and Deploy
+
+1. Create and apply migrations for each service:
+    ```bash
+    dotnet ef migrations add InitialCreate --project DonorService
+    dotnet ef database update --project DonorService
+    ```
+
+2. Repeat the above steps for `InventoryService`, `RequestService`, and `AuthService`.
+
+3. Deploy the microservices using Docker or Kubernetes for containerization and scaling.
+
+---
+
+This implementation covers the main CRUD operations for Donor, Inventory, and Request services, along with JWT-based authentication. Each microservice is isolated, scalable, and adheres to the principles of a microservice architecture.
+
+
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+
+To implement the **Authentication and Authorization Service** by fetching user details and roles from a database in the Blood Bank Management System (BBMS) using .NET Core and Entity Framework Core, we will need to make the following updates to the **AuthService**:
+
+1. **Create User and Role Models**.
+2. **Create a User Context (DbContext)** to manage user and role data.
+3. **Implement User Authentication by fetching credentials from the database**.
+4. **Generate JWT Tokens with Role-based Claims**.
+
+---
+
+### Step 1: Database Models for User and Role
+
+We will define two models: `User` and `Role`. Each `User` can have a specific `Role`.
+
+```csharp
+public class User
+{
+    public int UserId { get; set; }
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string Email { get; set; }
+    
+    public int RoleId { get; set; }
+    public Role Role { get; set; }
+}
+
+public class Role
+{
+    public int RoleId { get; set; }
+    public string RoleName { get; set; }
+    
+    public ICollection<User> Users { get; set; }
+}
+```
+
+- `User`: Represents the user with fields for storing username, password, and role.
+- `Role`: Represents the role a user can have (e.g., "Admin", "Hospital", "Donor").
+
+### Step 2: Create UserContext (DbContext)
+
+We will define a `UserContext` for managing user and role information.
+
+```csharp
+public class UserContext : DbContext
+{
+    public DbSet<User> Users { get; set; }
+    public DbSet<Role> Roles { get; set; }
+
+    public UserContext(DbContextOptions<UserContext> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Role>().HasData(
+            new Role { RoleId = 1, RoleName = "Admin" },
+            new Role { RoleId = 2, RoleName = "Hospital" },
+            new Role { RoleId = 3, RoleName = "Donor" }
+        );
+
+        // You can seed users for testing
+        modelBuilder.Entity<User>().HasData(
+            new User { UserId = 1, Username = "admin", Password = "admin123", Email = "admin@example.com", RoleId = 1 },
+            new User { UserId = 2, Username = "hospital", Password = "hospital123", Email = "hospital@example.com", RoleId = 2 },
+            new User { UserId = 3, Username = "donor", Password = "donor123", Email = "donor@example.com", RoleId = 3 }
+        );
+    }
+}
+```
+
+- **OnModelCreating**: Seeds initial roles and users into the database for testing purposes.
+
+### Step 3: Configure the AuthController
+
+Now we will update the `AuthController` to authenticate users against the database and issue JWT tokens.
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class AuthController : ControllerBase
+{
+    private readonly IConfiguration _config;
+    private readonly UserContext _context;
+
+    public AuthController(IConfiguration config, UserContext context)
+    {
+        _config = config;
+        _context = context;
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] UserLogin userLogin)
+    {
+        var user = await AuthenticateUser(userLogin);
+        if (user != null)
+        {
+            var token = GenerateJwtToken(user);
+            return Ok(new { token });
+        }
+        return Unauthorized();
+    }
+
+    private async Task<User> AuthenticateUser(UserLogin userLogin)
+    {
+        // Authenticate user by checking username and password from the database
+        return await _context.Users.Include(u => u.Role)
+                                   .FirstOrDefaultAsync(u => u.Username == userLogin.Username && u.Password == userLogin.Password);
+    }
+
+    private string GenerateJwtToken(User user)
+    {
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Username),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role.RoleName)
+        };
+
+        var token = new JwtSecurityToken(_config["Jwt:Issuer"],
+                                         _config["Jwt:Audience"],
+                                         claims,
+                                         expires: DateTime.Now.AddMinutes(120),
+                                         signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+- **AuthenticateUser**: Fetches the user from the database and verifies their credentials.
+- **GenerateJwtToken**: Generates a JWT token with user details and role-based claims.
+
+### Step 4: Update Startup to Support JWT Authentication
+
+Update `Startup.cs` to configure JWT authentication.
+
+```csharp
+public class Startup
+{
+    public IConfiguration Configuration { get; }
+
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Configure DBContext for UserContext
+        services.AddDbContext<UserContext>(options =>
+            options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+
+        // Configure JWT Authentication
+        services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+            };
+        });
+
+        services.AddControllers();
+        services.AddSwaggerGen();
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+
+        app.UseSwagger();
+        app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Blood Bank Auth Service"));
+
+        app.UseRouting();
+
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+        });
+    }
+}
+```
+
+- **AddAuthentication**: Sets up the JWT token validation parameters.
+- **AddDbContext**: Configures the `UserContext` for interacting with the User and Role tables.
+
+### Step 5: Create the Login DTO
+
+We will create a `UserLogin` DTO (Data Transfer Object) to accept login credentials from the client.
+
+```csharp
+public class UserLogin
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+}
+```
+
+### Step 6: Apply Migrations
+
+Create and apply migrations to set up the database schema for the `User` and `Role` tables.
+
+1. **Create Migration**:
+    ```bash
+    dotnet ef migrations add InitialUserRoleMigration --project AuthService
+    ```
+
+2. **Apply Migration**:
+    ```bash
+    dotnet ef database update --project AuthService
+    ```
+
+### Step 7: Test the API
+
+- **Login**: 
+    Send a `POST` request to `api/Auth/login` with the username and password.
+
+    Example JSON:
+    ```json
+    {
+        "username": "admin",
+        "password": "admin123"
+    }
+    ```
+
+    The response will contain a JWT token:
+    ```json
+    {
+        "token": "eyJhbGciOiJIUzI1NiIsInR..."
+    }
+    ```
+
+- **Authorize Requests**:
+    Use the JWT token in the Authorization header when accessing other secure endpoints in the BBMS (such as the `DonorService`, `InventoryService`, or `RequestService`).
+
+    Example header:
+    ```
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR...
+    ```
+
+---
+
+### Conclusion
+
+This implementation of **Authentication and Authorization Service** with **JWT** fetches user details and roles from the database, ensuring secure role-based access control in the Blood Bank Management System. This service allows the **Admin**, **Hospital**, and **Donor** roles to interact with the system based on their permissions, secured by JWT tokens.
