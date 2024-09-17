@@ -1,0 +1,402 @@
+To implement the **Inventory Service** for managing blood donations, blood types, storage, expiration, and priority levels, as well as handling blood banks in different cities, follow these steps:
+
+### 1. **Database Tables and Entities**
+
+**Entities and Tables Required:**
+1. **BloodType**: To categorize different types of blood.
+2. **BloodDonation**: To record individual blood donations.
+3. **BloodUnit**: To track units of blood, their storage, and expiration.
+4. **BloodBank**: To manage blood banks in different cities.
+5. **BloodBankInventory**: To manage the inventory of blood units in each blood bank.
+6. **PriorityLevel**: To handle priority levels for processing requests.
+7. **Request**: To handle blood requests from hospitals.
+
+#### **Database Tables and Entity Models**
+
+1. **BloodType**
+
+```csharp
+public class BloodType
+{
+    public int BloodTypeId { get; set; }
+    public string Name { get; set; }
+}
+```
+
+2. **BloodDonation**
+
+```csharp
+public class BloodDonation
+{
+    public int BloodDonationId { get; set; }
+    public int DonorId { get; set; }
+    public int BloodTypeId { get; set; }
+    public DateTime DonationDate { get; set; }
+
+    public virtual Donor Donor { get; set; }
+    public virtual BloodType BloodType { get; set; }
+}
+```
+
+3. **BloodUnit**
+
+```csharp
+public class BloodUnit
+{
+    public int BloodUnitId { get; set; }
+    public int BloodDonationId { get; set; }
+    public int BloodBankId { get; set; }
+    public DateTime CollectionDate { get; set; }
+    public DateTime ExpirationDate { get; set; }
+    public string StorageLocation { get; set; } // E.g., "Refrigerator 1"
+
+    public virtual BloodDonation BloodDonation { get; set; }
+    public virtual BloodBank BloodBank { get; set; }
+}
+```
+
+4. **BloodBank**
+
+```csharp
+public class BloodBank
+{
+    public int BloodBankId { get; set; }
+    public string Name { get; set; }
+    public string City { get; set; }
+    public string Address { get; set; }
+}
+```
+
+5. **BloodBankInventory**
+
+```csharp
+public class BloodBankInventory
+{
+    public int BloodBankInventoryId { get; set; }
+    public int BloodBankId { get; set; }
+    public int BloodTypeId { get; set; }
+    public int Quantity { get; set; } // Number of units
+
+    public virtual BloodBank BloodBank { get; set; }
+    public virtual BloodType BloodType { get; set; }
+}
+```
+
+6. **PriorityLevel**
+
+```csharp
+public class PriorityLevel
+{
+    public int PriorityLevelId { get; set; }
+    public string Name { get; set; }
+}
+```
+
+7. **Request**
+
+```csharp
+public class Request
+{
+    public int RequestId { get; set; }
+    public int BloodBankId { get; set; }
+    public int BloodTypeId { get; set; }
+    public int QuantityRequested { get; set; }
+    public DateTime RequestDate { get; set; }
+    public int PriorityLevelId { get; set; }
+
+    public virtual BloodBank BloodBank { get; set; }
+    public virtual BloodType BloodType { get; set; }
+    public virtual PriorityLevel PriorityLevel { get; set; }
+}
+```
+
+#### **DbContext Configuration**
+
+```csharp
+public class InventoryDbContext : DbContext
+{
+    public InventoryDbContext(DbContextOptions<InventoryDbContext> options) : base(options) { }
+
+    public DbSet<BloodType> BloodTypes { get; set; }
+    public DbSet<BloodDonation> BloodDonations { get; set; }
+    public DbSet<BloodUnit> BloodUnits { get; set; }
+    public DbSet<BloodBank> BloodBanks { get; set; }
+    public DbSet<BloodBankInventory> BloodBankInventories { get; set; }
+    public DbSet<PriorityLevel> PriorityLevels { get; set; }
+    public DbSet<Request> Requests { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Define relationships, constraints, etc.
+    }
+}
+```
+
+### 2. **API Implementation**
+
+#### **1. BloodTypeController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class BloodTypeController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public BloodTypeController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/bloodtype
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodType>>> GetAllBloodTypes()
+    {
+        return await _context.BloodTypes.ToListAsync();
+    }
+
+    // POST: api/bloodtype
+    [HttpPost]
+    public async Task<ActionResult<BloodType>> CreateBloodType([FromBody] BloodType bloodType)
+    {
+        _context.BloodTypes.Add(bloodType);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllBloodTypes), new { id = bloodType.BloodTypeId }, bloodType);
+    }
+}
+```
+
+#### **2. BloodDonationController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class BloodDonationController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public BloodDonationController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/blooddonation
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodDonation>>> GetAllBloodDonations()
+    {
+        return await _context.BloodDonations.Include(d => d.BloodType).ToListAsync();
+    }
+
+    // POST: api/blooddonation
+    [HttpPost]
+    public async Task<ActionResult<BloodDonation>> CreateBloodDonation([FromBody] BloodDonation bloodDonation)
+    {
+        _context.BloodDonations.Add(bloodDonation);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllBloodDonations), new { id = bloodDonation.BloodDonationId }, bloodDonation);
+    }
+}
+```
+
+#### **3. BloodUnitController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class BloodUnitController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public BloodUnitController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/bloodunit
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodUnit>>> GetAllBloodUnits()
+    {
+        return await _context.BloodUnits.Include(b => b.BloodDonation).Include(b => b.BloodBank).ToListAsync();
+    }
+
+    // POST: api/bloodunit
+    [HttpPost]
+    public async Task<ActionResult<BloodUnit>> CreateBloodUnit([FromBody] BloodUnit bloodUnit)
+    {
+        _context.BloodUnits.Add(bloodUnit);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllBloodUnits), new { id = bloodUnit.BloodUnitId }, bloodUnit);
+    }
+}
+```
+
+#### **4. BloodBankController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class BloodBankController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public BloodBankController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/bloodbank
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodBank>>> GetAllBloodBanks()
+    {
+        return await _context.BloodBanks.ToListAsync();
+    }
+
+    // POST: api/bloodbank
+    [HttpPost]
+    public async Task<ActionResult<BloodBank>> CreateBloodBank([FromBody] BloodBank bloodBank)
+    {
+        _context.BloodBanks.Add(bloodBank);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllBloodBanks), new { id = bloodBank.BloodBankId }, bloodBank);
+    }
+}
+```
+
+#### **5. BloodBankInventoryController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class BloodBankInventoryController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public BloodBankInventoryController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/bloodbankinventory
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<BloodBankInventory>>> GetAllBloodBankInventories()
+    {
+        return await _context.BloodBankInventories.Include(b => b.BloodBank).Include(b => b.BloodType).ToListAsync();
+    }
+
+    // POST: api/bloodbankinventory
+    [HttpPost]
+    public async Task<ActionResult<BloodBankInventory>> CreateBloodBankInventory([FromBody] BloodBankInventory bloodBankInventory)
+    {
+        _context.BloodBankInventories.Add(bloodBankInventory);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllBloodBankInventories), new { id = bloodBankInventory.BloodBankInventoryId }, bloodBankInventory);
+    }
+}
+```
+
+#### **6. PriorityLevelController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class PriorityLevelController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public PriorityLevelController(Inventory
+
+DbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/prioritylevel
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<PriorityLevel>>> GetAllPriorityLevels()
+    {
+        return await _context.PriorityLevels.ToListAsync();
+    }
+
+    // POST: api/prioritylevel
+    [HttpPost]
+    public async Task<ActionResult<PriorityLevel>> CreatePriorityLevel([FromBody] PriorityLevel priorityLevel)
+    {
+        _context.PriorityLevels.Add(priorityLevel);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllPriorityLevels), new { id = priorityLevel.PriorityLevelId }, priorityLevel);
+    }
+}
+```
+
+#### **7. RequestController**
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class RequestController : ControllerBase
+{
+    private readonly InventoryDbContext _context;
+
+    public RequestController(InventoryDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: api/request
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Request>>> GetAllRequests()
+    {
+        return await _context.Requests.Include(r => r.BloodBank).Include(r => r.BloodType).Include(r => r.PriorityLevel).ToListAsync();
+    }
+
+    // POST: api/request
+    [HttpPost]
+    public async Task<ActionResult<Request>> CreateRequest([FromBody] Request request)
+    {
+        _context.Requests.Add(request);
+        await _context.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetAllRequests), new { id = request.RequestId }, request);
+    }
+}
+```
+
+### 3. **Swagger Integration**
+
+Make sure Swagger is enabled in the **Startup.cs**:
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddDbContext<InventoryDbContext>(options =>
+        options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+
+    services.AddControllers();
+    services.AddSwaggerGen();
+}
+
+public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+{
+    if (env.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Inventory API V1"));
+    }
+
+    app.UseRouting();
+    app.UseAuthorization();
+    app.UseEndpoints(endpoints =>
+    {
+        endpoints.MapControllers();
+    });
+}
+```
+
+### 4. **Testing the APIs**
+
+Once implemented, use tools like **Postman** or **Swagger UI** to test the APIs. Ensure the following functionalities:
+- **CRUD** operations for blood types, blood donations, blood units, blood banks, blood bank inventory, priority levels, and requests.
+- Proper role-based access and permissions.
+
+### Conclusion
+
+This setup provides a comprehensive implementation of the **Inventory Service**. It allows managing blood donations, types, units, storage, and prioritization of requests across multiple blood banks. This structure supports scalability and integration with other services within the Blood Bank Management System.
