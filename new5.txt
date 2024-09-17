@@ -1297,3 +1297,303 @@ Run the migrations to set up the database for `User` and `Role` entities.
 ### Conclusion
 
 The **Repository Pattern** is now implemented for the **Authentication and Authorization Service** in the Blood Bank Management System. This approach abstracts data access logic into repository classes, providing a more maintainable and testable solution. The service can easily interact with the database via the repositories, and **JWT** tokens are generated for secure, role-based access across the system.
+
+
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&7
+
+
+To implement additional APIs for **Authentication and Authorization** (such as registration, role management, and user management) in the **Blood Bank Management System (BBMS)**, we will expand upon the existing implementation. These APIs will handle tasks like user registration, role management, and CRUD operations for users and roles.
+
+The following additional APIs will be implemented:
+1. **User Registration**: Allows new users to register with a username, password, and role.
+2. **Get Users**: Retrieves a list of users (for admin use).
+3. **Update User**: Allows updating user information (username, password, role, etc.).
+4. **Delete User**: Allows deleting a user.
+5. **Role Management**: Allows managing roles (CRUD operations).
+
+### Step 1: Update the `AuthController` to Support User Registration
+
+First, we will implement a user registration API in the `AuthController`. This API will allow new users to sign up.
+
+```csharp
+[HttpPost("register")]
+public async Task<IActionResult> Register([FromBody] UserRegister userRegister)
+{
+    // Check if the user already exists
+    var existingUser = await _userRepository.GetUserByUsernameAndPassword(userRegister.Username, userRegister.Password);
+    if (existingUser != null)
+    {
+        return BadRequest("User already exists.");
+    }
+
+    // Fetch role based on the role name provided by the user
+    var role = await _roleRepository.GetRoleById(userRegister.RoleId);
+    if (role == null)
+    {
+        return BadRequest("Invalid role.");
+    }
+
+    // Create a new user
+    var user = new User
+    {
+        Username = userRegister.Username,
+        Password = userRegister.Password,
+        Email = userRegister.Email,
+        RoleId = userRegister.RoleId
+    };
+
+    await _userRepository.AddUser(user);
+    return Ok("User registered successfully.");
+}
+```
+
+- The `Register` method checks if the user already exists, then fetches the corresponding role, and finally creates a new user in the system.
+
+### Step 2: Implement Get All Users API
+
+This API will allow an **admin** to fetch a list of all users.
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpGet("users")]
+public async Task<IActionResult> GetUsers()
+{
+    var users = await _userRepository.GetAllUsers();
+    var result = users.Select(u => new
+    {
+        u.UserId,
+        u.Username,
+        u.Email,
+        Role = u.Role.RoleName
+    });
+    return Ok(result);
+}
+```
+
+- The `GetUsers` method is protected by an **Admin** role and fetches all users from the database.
+
+### Step 3: Implement Update User API
+
+This API allows updating user information such as the username, password, email, and role. Only admins should be able to update users.
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpPut("update/{userId}")]
+public async Task<IActionResult> UpdateUser(int userId, [FromBody] UserUpdate userUpdate)
+{
+    var user = await _userRepository.GetUserById(userId);
+    if (user == null)
+    {
+        return NotFound("User not found.");
+    }
+
+    // Update user properties
+    user.Username = userUpdate.Username ?? user.Username;
+    user.Email = userUpdate.Email ?? user.Email;
+    user.Password = userUpdate.Password ?? user.Password;
+
+    // Update role if necessary
+    if (userUpdate.RoleId != null)
+    {
+        var role = await _roleRepository.GetRoleById((int)userUpdate.RoleId);
+        if (role == null)
+        {
+            return BadRequest("Invalid role.");
+        }
+        user.RoleId = (int)userUpdate.RoleId;
+    }
+
+    await _userRepository.UpdateUser(user);
+    return Ok("User updated successfully.");
+}
+```
+
+- The `UpdateUser` method allows an admin to modify user details such as username, password, email, and role.
+
+### Step 4: Implement Delete User API
+
+This API allows admins to delete users from the system.
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpDelete("delete/{userId}")]
+public async Task<IActionResult> DeleteUser(int userId)
+{
+    var user = await _userRepository.GetUserById(userId);
+    if (user == null)
+    {
+        return NotFound("User not found.");
+    }
+
+    await _userRepository.DeleteUser(userId);
+    return Ok("User deleted successfully.");
+}
+```
+
+- The `DeleteUser` method deletes a user from the system and is restricted to admins.
+
+### Step 5: Implement Role Management APIs
+
+We will now implement CRUD operations for managing roles. These APIs are primarily intended for **admins** to manage the roles.
+
+#### Get All Roles
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpGet("roles")]
+public async Task<IActionResult> GetRoles()
+{
+    var roles = await _roleRepository.GetAllRoles();
+    return Ok(roles);
+}
+```
+
+#### Create Role
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpPost("roles")]
+public async Task<IActionResult> CreateRole([FromBody] RoleCreate roleCreate)
+{
+    var role = new Role
+    {
+        RoleName = roleCreate.RoleName
+    };
+
+    await _roleRepository.AddRole(role);
+    return Ok("Role created successfully.");
+}
+```
+
+#### Update Role
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpPut("roles/{roleId}")]
+public async Task<IActionResult> UpdateRole(int roleId, [FromBody] RoleUpdate roleUpdate)
+{
+    var role = await _roleRepository.GetRoleById(roleId);
+    if (role == null)
+    {
+        return NotFound("Role not found.");
+    }
+
+    role.RoleName = roleUpdate.RoleName ?? role.RoleName;
+    await _roleRepository.UpdateRole(role);
+    return Ok("Role updated successfully.");
+}
+```
+
+#### Delete Role
+
+```csharp
+[Authorize(Roles = "Admin")]
+[HttpDelete("roles/{roleId}")]
+public async Task<IActionResult> DeleteRole(int roleId)
+{
+    var role = await _roleRepository.GetRoleById(roleId);
+    if (role == null)
+    {
+        return NotFound("Role not found.");
+    }
+
+    await _roleRepository.DeleteRole(roleId);
+    return Ok("Role deleted successfully.");
+}
+```
+
+### Step 6: DTOs for User and Role Operations
+
+We will create DTOs (Data Transfer Objects) for the user and role operations.
+
+#### UserRegister DTO
+
+```csharp
+public class UserRegister
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string Email { get; set; }
+    public int RoleId { get; set; }
+}
+```
+
+#### UserUpdate DTO
+
+```csharp
+public class UserUpdate
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string Email { get; set; }
+    public int? RoleId { get; set; }
+}
+```
+
+#### RoleCreate DTO
+
+```csharp
+public class RoleCreate
+{
+    public string RoleName { get; set; }
+}
+```
+
+#### RoleUpdate DTO
+
+```csharp
+public class RoleUpdate
+{
+    public string RoleName { get; set; }
+}
+```
+
+### Step 7: Update Dependency Injection in `Startup.cs`
+
+Make sure all the necessary services and repositories are registered in the `Startup.cs` file.
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddDbContext<UserContext>(options =>
+        options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+
+    services.AddScoped<IUserRepository, UserRepository>();
+    services.AddScoped<IRoleRepository, RoleRepository>();
+
+    services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+            };
+        });
+
+    services.AddControllers();
+    services.AddSwaggerGen();
+}
+```
+
+### Step 8: Test the APIs
+
+- **Register**: Register a new user via `POST /api/auth/register`.
+- **Get Users**: Fetch all users via `GET /api/auth/users`.
+- **Update User**: Update a user’s details via `PUT /api/auth/update/{userId}`.
+- **Delete User**: Delete a user via `DELETE /api/auth/delete/{userId}`.
+- **Get Roles**: Fetch all roles via `GET /api/auth/roles`.
+- **Create Role**: Create a new role via `POST /api/auth/roles`.
+- **Update Role**: Update an existing role via `PUT /api/auth/roles/{roleId}`.
+- **Delete Role**: Delete a role via `DELETE /api/auth/roles/{roleId}`.
+
+---
+
+### Conclusion
+
+This implementation extends the **Authentication and Authorization Service** by adding support for user registration, role management, and additional user management capabilities. Using the **repository pattern**, the solution remains modular and maintainable. These APIs are protected with **JWT tokens** and restricted based on user roles (admin, donor, hospital).
