@@ -1,0 +1,230 @@
+To implement the functionality where:
+
+- A **user with the Donor role** can update **only their own details**, and
+- A **user with the Admin role** can update **any user’s details** or **any donor's details**,
+
+you need to properly enforce **role-based access control (RBAC)** between the **Authentication Service** and the **Donor Service**. You will also ensure that **JWT authentication** is correctly integrated between the services to facilitate secure operations. Below is a step-by-step guide to implementing this functionality.
+
+### Steps to Implement Role-Based Access Control (RBAC) between Auth and Donor Services
+
+1. **JWT Token Generation in the Authentication Service**
+2. **Authentication and Authorization Middleware Setup in the Donor Service**
+3. **Controller-Level Authorization for Role-Based Access**
+4. **Service-Level Logic to Handle Role-Based Permissions**
+
+---
+
+### 1. **JWT Token Generation in the Authentication Service**
+
+In the **Authentication Service**, when the user logs in, a **JWT token** is generated. This token will include the user's role (Donor, Admin, etc.) and be signed with a secret key. Here's a sample code for generating the JWT token with roles.
+
+#### **AuthController.cs (in AuthService)**
+```csharp
+[HttpPost("login")]
+public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+{
+    var user = await _authService.AuthenticateUser(loginDto.Username, loginDto.Password);
+    if (user == null)
+        return Unauthorized();
+
+    // Generate JWT Token
+    var token = GenerateJwtToken(user);
+    return Ok(new { token });
+}
+
+private string GenerateJwtToken(User user)
+{
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+        new Claim(ClaimTypes.Name, user.Username),
+        new Claim(ClaimTypes.Role, user.Role.Name)  // Attach role in the token
+    };
+
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+    var token = new JwtSecurityToken(
+        _config["Jwt:Issuer"],
+        _config["Jwt:Issuer"],
+        claims,
+        expires: DateTime.Now.AddMinutes(30),
+        signingCredentials: creds);
+
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+```
+
+The **JWT token** contains the role information (like `Donor` or `Admin`). This token will be passed to the **Donor Service** in the `Authorization` header for every API request.
+
+---
+
+### 2. **Authentication and Authorization Middleware Setup in the Donor Service**
+
+In the **Donor Service**, you'll need to:
+
+- Enable JWT authentication.
+- Implement role-based authorization for different API endpoints.
+
+#### **Startup.cs (in DonorService)**
+Make sure JWT authentication is enabled:
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    // JWT authentication
+    services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = Configuration["Jwt:Issuer"],
+            ValidAudience = Configuration["Jwt:Issuer"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+        };
+    });
+
+    // Add authorization
+    services.AddAuthorization();
+
+    // Add controllers
+    services.AddControllers();
+}
+
+public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+{
+    app.UseRouting();
+    app.UseAuthentication();  // Enable authentication middleware
+    app.UseAuthorization();   // Enable authorization middleware
+    app.UseEndpoints(endpoints =>
+    {
+        endpoints.MapControllers();
+    });
+}
+```
+
+This setup ensures that every API request is authenticated and authorized based on the **JWT token**.
+
+---
+
+### 3. **Controller-Level Authorization for Role-Based Access**
+
+In the **DonorController**, you need to apply **role-based authorization**. This will restrict **Donors** to updating only their own details, while **Admins** will have permission to update any donor’s details.
+
+#### **DonorController.cs (in DonorService)**
+
+1. **Allow Donors to Update Only Their Own Information:**
+   - Use the `User.Identity.Name` from the JWT token to identify the authenticated user and ensure they can update only their own details.
+
+2. **Allow Admins to Update Any Donor's Information:**
+   - Check if the user has the `Admin` role and allow them to update any donor's details.
+
+```csharp
+[Authorize]  // Requires authentication for all methods
+[Route("api/[controller]")]
+[ApiController]
+public class DonorController : ControllerBase
+{
+    private readonly IDonorRepository _donorRepository;
+    private readonly IUserRepository _userRepository;
+
+    public DonorController(IDonorRepository donorRepository, IUserRepository userRepository)
+    {
+        _donorRepository = donorRepository;
+        _userRepository = userRepository;
+    }
+
+    // PUT: api/donor/{id}
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateDonor(int id, [FromBody] Donor donor)
+    {
+        // Check if the authenticated user is the donor or an admin
+        var loggedInUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+        var loggedInUserRole = User.FindFirst(ClaimTypes.Role).Value;
+
+        var existingDonor = await _donorRepository.GetDonorByIdAsync(id);
+        if (existingDonor == null)
+        {
+            return NotFound();
+        }
+
+        // Only allow the donor to update their own details
+        if (loggedInUserRole == "Donor" && existingDonor.UserId != loggedInUserId)
+        {
+            return Forbid("You are not authorized to update other donor's details.");
+        }
+
+        // Admin can update any donor details
+        if (loggedInUserRole == "Admin" || existingDonor.UserId == loggedInUserId)
+        {
+            await _donorRepository.UpdateDonorAsync(donor);
+            return NoContent();
+        }
+
+        return Forbid("You are not authorized to perform this action.");
+    }
+}
+```
+
+In this implementation:
+- **Donors** can update their own details.
+- **Admins** can update any donor’s details.
+- The `User.FindFirst(ClaimTypes.NameIdentifier).Value` retrieves the `UserId` from the JWT token, ensuring the logged-in user can be validated.
+
+---
+
+### 4. **Service-Level Logic for Role-Based Permissions**
+
+While the controller handles the basic role-checking logic, you can further enhance security and maintainability by moving some of the role-based logic to the **service layer** or **repository layer**.
+
+For example, the repository can check if the authenticated user has the necessary permissions:
+
+#### **DonorRepository.cs**
+
+```csharp
+public class DonorRepository : IDonorRepository
+{
+    private readonly DonorDbContext _context;
+
+    public DonorRepository(DonorDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task UpdateDonorAsync(Donor donor)
+    {
+        var existingDonor = await _context.Donors.FindAsync(donor.DonorId);
+        if (existingDonor == null)
+            throw new Exception("Donor not found.");
+
+        // Update donor details
+        existingDonor.Name = donor.Name;
+        existingDonor.BloodTypeId = donor.BloodTypeId;
+        existingDonor.HealthStatusId = donor.HealthStatusId;
+        existingDonor.Age = donor.Age;
+        existingDonor.Phone = donor.Phone;
+
+        _context.Donors.Update(existingDonor);
+        await _context.SaveChangesAsync();
+    }
+}
+```
+
+---
+
+### Conclusion
+
+To link **authentication** and **donor management**:
+- The **AuthService** handles the generation of JWT tokens, including the user role.
+- The **DonorService** enforces authentication and authorization using the JWT token.
+- **Role-based access control** is applied at the controller level to ensure that **donors** can only update their own details, while **admins** can update any user or donor.
+
+By setting up authentication middleware, JWT token validation, and role-based authorization policies, you can securely link these services and control the behavior based on user roles.
