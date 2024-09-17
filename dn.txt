@@ -1,0 +1,344 @@
+Donor Service
+
+To implement all the APIs for the **Donor Service** in the **Blood Bank Management System (BBMS)**, we will follow a similar approach as the Authentication and Authorization Service. We will use **.NET Core**, **Entity Framework (EF)**, and the **Repository Pattern** to build a scalable and modular solution.
+
+The Donor Service will handle tasks such as:
+- Donor registration and management
+- Donation scheduling
+- Tracking donation history
+- Checking donor eligibility based on health criteria
+- Managing blood inventory related to donations
+
+### Key APIs for the Donor Service
+1. **Register Donor**: Register a new donor.
+2. **Get All Donors**: Fetch the list of all registered donors.
+3. **Get Donor by ID**: Fetch details of a specific donor by ID.
+4. **Update Donor**: Update donor information.
+5. **Delete Donor**: Delete a donor from the system.
+6. **Schedule Donation**: Schedule a blood donation for a donor.
+7. **Get Donation History**: Retrieve a donor's donation history.
+8. **Check Eligibility**: Check donor eligibility based on health conditions.
+
+### Step 1: Define Repository Interfaces for Donor and Donation
+
+We'll define two repositories: one for **Donor** and one for **Donation** (which represents the donation schedule and history).
+
+#### IDonorRepository Interface
+
+```csharp
+public interface IDonorRepository
+{
+    Task<Donor> GetDonorById(int donorId);
+    Task<IEnumerable<Donor>> GetAllDonors();
+    Task AddDonor(Donor donor);
+    Task UpdateDonor(Donor donor);
+    Task DeleteDonor(int donorId);
+}
+```
+
+#### IDonationRepository Interface
+
+```csharp
+public interface IDonationRepository
+{
+    Task<IEnumerable<Donation>> GetDonationHistoryByDonorId(int donorId);
+    Task ScheduleDonation(Donation donation);
+}
+```
+
+### Step 2: Implement Repository Classes
+
+Now, we'll implement these repositories using **Entity Framework (EF)**.
+
+#### DonorRepository Implementation
+
+```csharp
+public class DonorRepository : IDonorRepository
+{
+    private readonly BloodBankContext _context;
+
+    public DonorRepository(BloodBankContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Donor> GetDonorById(int donorId)
+    {
+        return await _context.Donors.Include(d => d.Donations)
+                                    .FirstOrDefaultAsync(d => d.DonorId == donorId);
+    }
+
+    public async Task<IEnumerable<Donor>> GetAllDonors()
+    {
+        return await _context.Donors.Include(d => d.Donations).ToListAsync();
+    }
+
+    public async Task AddDonor(Donor donor)
+    {
+        _context.Donors.Add(donor);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateDonor(Donor donor)
+    {
+        _context.Donors.Update(donor);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteDonor(int donorId)
+    {
+        var donor = await _context.Donors.FindAsync(donorId);
+        if (donor != null)
+        {
+            _context.Donors.Remove(donor);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+#### DonationRepository Implementation
+
+```csharp
+public class DonationRepository : IDonationRepository
+{
+    private readonly BloodBankContext _context;
+
+    public DonationRepository(BloodBankContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<IEnumerable<Donation>> GetDonationHistoryByDonorId(int donorId)
+    {
+        return await _context.Donations.Where(d => d.DonorId == donorId).ToListAsync();
+    }
+
+    public async Task ScheduleDonation(Donation donation)
+    {
+        _context.Donations.Add(donation);
+        await _context.SaveChangesAsync();
+    }
+}
+```
+
+### Step 3: Implement the Donor Controller
+
+Now we’ll implement the Donor Controller (`DonorController.cs`) to expose the required APIs.
+
+#### DonorController Implementation
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class DonorController : ControllerBase
+{
+    private readonly IDonorRepository _donorRepository;
+    private readonly IDonationRepository _donationRepository;
+
+    public DonorController(IDonorRepository donorRepository, IDonationRepository donationRepository)
+    {
+        _donorRepository = donorRepository;
+        _donationRepository = donationRepository;
+    }
+
+    // 1. Register Donor
+    [HttpPost("register")]
+    public async Task<IActionResult> RegisterDonor([FromBody] DonorRegisterDto donorRegister)
+    {
+        var donor = new Donor
+        {
+            Name = donorRegister.Name,
+            Age = donorRegister.Age,
+            BloodType = donorRegister.BloodType,
+            Email = donorRegister.Email,
+            Phone = donorRegister.Phone,
+            HealthStatus = donorRegister.HealthStatus
+        };
+
+        await _donorRepository.AddDonor(donor);
+        return Ok("Donor registered successfully.");
+    }
+
+    // 2. Get All Donors
+    [HttpGet("all")]
+    public async Task<IActionResult> GetAllDonors()
+    {
+        var donors = await _donorRepository.GetAllDonors();
+        return Ok(donors);
+    }
+
+    // 3. Get Donor by ID
+    [HttpGet("{donorId}")]
+    public async Task<IActionResult> GetDonorById(int donorId)
+    {
+        var donor = await _donorRepository.GetDonorById(donorId);
+        if (donor == null)
+        {
+            return NotFound("Donor not found.");
+        }
+        return Ok(donor);
+    }
+
+    // 4. Update Donor
+    [HttpPut("update/{donorId}")]
+    public async Task<IActionResult> UpdateDonor(int donorId, [FromBody] DonorUpdateDto donorUpdate)
+    {
+        var donor = await _donorRepository.GetDonorById(donorId);
+        if (donor == null)
+        {
+            return NotFound("Donor not found.");
+        }
+
+        donor.Name = donorUpdate.Name ?? donor.Name;
+        donor.Email = donorUpdate.Email ?? donor.Email;
+        donor.Phone = donorUpdate.Phone ?? donor.Phone;
+        donor.HealthStatus = donorUpdate.HealthStatus ?? donor.HealthStatus;
+
+        await _donorRepository.UpdateDonor(donor);
+        return Ok("Donor updated successfully.");
+    }
+
+    // 5. Delete Donor
+    [HttpDelete("delete/{donorId}")]
+    public async Task<IActionResult> DeleteDonor(int donorId)
+    {
+        var donor = await _donorRepository.GetDonorById(donorId);
+        if (donor == null)
+        {
+            return NotFound("Donor not found.");
+        }
+
+        await _donorRepository.DeleteDonor(donorId);
+        return Ok("Donor deleted successfully.");
+    }
+
+    // 6. Schedule Donation
+    [HttpPost("schedule")]
+    public async Task<IActionResult> ScheduleDonation([FromBody] DonationScheduleDto donationSchedule)
+    {
+        var donation = new Donation
+        {
+            DonorId = donationSchedule.DonorId,
+            DonationDate = donationSchedule.DonationDate,
+            BloodAmount = donationSchedule.BloodAmount
+        };
+
+        await _donationRepository.ScheduleDonation(donation);
+        return Ok("Donation scheduled successfully.");
+    }
+
+    // 7. Get Donation History
+    [HttpGet("history/{donorId}")]
+    public async Task<IActionResult> GetDonationHistory(int donorId)
+    {
+        var donationHistory = await _donationRepository.GetDonationHistoryByDonorId(donorId);
+        return Ok(donationHistory);
+    }
+
+    // 8. Check Eligibility
+    [HttpGet("eligibility/{donorId}")]
+    public async Task<IActionResult> CheckEligibility(int donorId)
+    {
+        var donor = await _donorRepository.GetDonorById(donorId);
+        if (donor == null)
+        {
+            return NotFound("Donor not found.");
+        }
+
+        var isEligible = donor.HealthStatus.ToLower() == "healthy" && donor.Age >= 18;
+        return Ok(new { IsEligible = isEligible });
+    }
+}
+```
+
+### Step 4: DTOs for Donor and Donation Operations
+
+We will create **DTOs** (Data Transfer Objects) for the donor and donation operations.
+
+#### DonorRegisterDto
+
+```csharp
+public class DonorRegisterDto
+{
+    public string Name { get; set; }
+    public int Age { get; set; }
+    public string BloodType { get; set; }
+    public string Email { get; set; }
+    public string Phone { get; set; }
+    public string HealthStatus { get; set; }
+}
+```
+
+#### DonorUpdateDto
+
+```csharp
+public class DonorUpdateDto
+{
+    public string Name { get; set; }
+    public string Email { get; set; }
+    public string Phone { get; set; }
+    public string HealthStatus { get; set; }
+}
+```
+
+#### DonationScheduleDto
+
+```csharp
+public class DonationScheduleDto
+{
+    public int DonorId { get; set; }
+    public DateTime DonationDate { get; set; }
+    public double BloodAmount { get; set; }
+}
+```
+
+### Step 5: Update Dependency Injection in `Startup.cs`
+
+Ensure all required services and repositories are registered in the `Startup.cs` file.
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddDbContext<BloodBankContext>(options =>
+        options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+
+    services.AddScoped<ID
+
+onorRepository, DonorRepository>();
+    services.AddScoped<IDonationRepository, DonationRepository>();
+
+    services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+            };
+        });
+
+    services.AddControllers();
+    services.AddSwaggerGen();
+}
+```
+
+### Step 6: Test the APIs
+
+- **Register Donor**: Register a new donor via `POST /api/donor/register`.
+- **Get All Donors**: Fetch all donors via `GET /api/donor/all`.
+- **Get Donor by ID**: Fetch donor details via `GET /api/donor/{donorId}`.
+- **Update Donor**: Update a donor’s details via `PUT /api/donor/update/{donorId}`.
+- **Delete Donor**: Delete a donor via `DELETE /api/donor/delete/{donorId}`.
+- **Schedule Donation**: Schedule a blood donation via `POST /api/donor/schedule`.
+- **Get Donation History**: Fetch donation history via `GET /api/donor/history/{donorId}`.
+- **Check Eligibility**: Check donor eligibility via `GET /api/donor/eligibility/{donorId}`.
+
+### Conclusion
+
+The **Donor Service** provides essential functionalities like donor registration, donation scheduling, eligibility checks, and donation history tracking. These features ensure the efficient management of donors and donations in the **Blood Bank Management System**. By using **.NET Core**, **Entity Framework**, and the **Repository Pattern**, we ensure scalability, maintainability, and separation of concerns in the system.
