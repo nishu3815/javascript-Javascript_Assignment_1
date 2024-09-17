@@ -970,3 +970,330 @@ Create and apply migrations to set up the database schema for the `User` and `Ro
 ### Conclusion
 
 This implementation of **Authentication and Authorization Service** with **JWT** fetches user details and roles from the database, ensuring secure role-based access control in the Blood Bank Management System. This service allows the **Admin**, **Hospital**, and **Donor** roles to interact with the system based on their permissions, secured by JWT tokens.
+
+
+
+#################################################################
+
+To implement the **Authentication and Authorization Service** with **Entity Framework (EF)** using the **Repository Pattern** for the Blood Bank Management System (BBMS), we will refactor the service to encapsulate data access logic within repositories. The repository pattern helps in abstracting the database access layer, making the system more modular and testable.
+
+Here’s a step-by-step guide to implement the **repository pattern** for the **Authentication and Authorization Service** using **.NET Core, EF, JWT, and MS SQL Server**.
+
+---
+
+### Step 1: Define Repository Interfaces
+
+We will define repository interfaces for `User` and `Role` to abstract the data access logic.
+
+#### IUserRepository Interface
+
+```csharp
+public interface IUserRepository
+{
+    Task<User> GetUserByUsernameAndPassword(string username, string password);
+    Task<IEnumerable<User>> GetAllUsers();
+    Task<User> GetUserById(int userId);
+    Task AddUser(User user);
+    Task UpdateUser(User user);
+    Task DeleteUser(int userId);
+}
+```
+
+#### IRoleRepository Interface
+
+```csharp
+public interface IRoleRepository
+{
+    Task<Role> GetRoleById(int roleId);
+    Task<IEnumerable<Role>> GetAllRoles();
+    Task AddRole(Role role);
+    Task UpdateRole(Role role);
+    Task DeleteRole(int roleId);
+}
+```
+
+### Step 2: Implement Repository Classes
+
+Now we will implement the repository interfaces. Each repository class will handle database operations using **EF Core**.
+
+#### UserRepository Implementation
+
+```csharp
+public class UserRepository : IUserRepository
+{
+    private readonly UserContext _context;
+
+    public UserRepository(UserContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<User> GetUserByUsernameAndPassword(string username, string password)
+    {
+        return await _context.Users.Include(u => u.Role)
+                                   .FirstOrDefaultAsync(u => u.Username == username && u.Password == password);
+    }
+
+    public async Task<IEnumerable<User>> GetAllUsers()
+    {
+        return await _context.Users.Include(u => u.Role).ToListAsync();
+    }
+
+    public async Task<User> GetUserById(int userId)
+    {
+        return await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.UserId == userId);
+    }
+
+    public async Task AddUser(User user)
+    {
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateUser(User user)
+    {
+        _context.Users.Update(user);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteUser(int userId)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user != null)
+        {
+            _context.Users.Remove(user);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+#### RoleRepository Implementation
+
+```csharp
+public class RoleRepository : IRoleRepository
+{
+    private readonly UserContext _context;
+
+    public RoleRepository(UserContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<Role> GetRoleById(int roleId)
+    {
+        return await _context.Roles.FindAsync(roleId);
+    }
+
+    public async Task<IEnumerable<Role>> GetAllRoles()
+    {
+        return await _context.Roles.ToListAsync();
+    }
+
+    public async Task AddRole(Role role)
+    {
+        _context.Roles.Add(role);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateRole(Role role)
+    {
+        _context.Roles.Update(role);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteRole(int roleId)
+    {
+        var role = await _context.Roles.FindAsync(roleId);
+        if (role != null)
+        {
+            _context.Roles.Remove(role);
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+### Step 3: Implement Unit of Work Pattern (Optional)
+
+You can also implement the **Unit of Work** pattern to manage multiple repositories under a single class, but it’s optional. It helps when you need to work with multiple repositories in one transaction.
+
+```csharp
+public interface IUnitOfWork : IDisposable
+{
+    IUserRepository Users { get; }
+    IRoleRepository Roles { get; }
+    Task<int> CompleteAsync();
+}
+```
+
+```csharp
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly UserContext _context;
+
+    public UnitOfWork(UserContext context)
+    {
+        _context = context;
+        Users = new UserRepository(context);
+        Roles = new RoleRepository(context);
+    }
+
+    public IUserRepository Users { get; private set; }
+    public IRoleRepository Roles { get; private set; }
+
+    public async Task<int> CompleteAsync()
+    {
+        return await _context.SaveChangesAsync();
+    }
+
+    public void Dispose()
+    {
+        _context.Dispose();
+    }
+}
+```
+
+### Step 4: Refactor the AuthController to Use Repositories
+
+Next, we will refactor the `AuthController` to use the `UserRepository` and `RoleRepository` for accessing the data.
+
+```csharp
+[Route("api/[controller]")]
+[ApiController]
+public class AuthController : ControllerBase
+{
+    private readonly IConfiguration _config;
+    private readonly IUserRepository _userRepository;
+
+    public AuthController(IConfiguration config, IUserRepository userRepository)
+    {
+        _config = config;
+        _userRepository = userRepository;
+    }
+
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] UserLogin userLogin)
+    {
+        var user = await _userRepository.GetUserByUsernameAndPassword(userLogin.Username, userLogin.Password);
+        if (user != null)
+        {
+            var token = GenerateJwtToken(user);
+            return Ok(new { token });
+        }
+        return Unauthorized();
+    }
+
+    private string GenerateJwtToken(User user)
+    {
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Username),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role.RoleName)
+        };
+
+        var token = new JwtSecurityToken(_config["Jwt:Issuer"],
+                                         _config["Jwt:Audience"],
+                                         claims,
+                                         expires: DateTime.Now.AddMinutes(120),
+                                         signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+### Step 5: Update Startup Configuration
+
+In the `Startup.cs`, configure the dependency injection for the repositories.
+
+```csharp
+public class Startup
+{
+    public IConfiguration Configuration { get; }
+
+    public Startup(IConfiguration configuration)
+    {
+        Configuration = configuration;
+    }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Configure DBContext for UserContext
+        services.AddDbContext<UserContext>(options =>
+            options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+
+        // Register repositories for dependency injection
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRoleRepository, RoleRepository>();
+
+        // Configure JWT Authentication
+        services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]))
+            };
+        });
+
+        services.AddControllers();
+        services.AddSwaggerGen();
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+
+        app.UseSwagger();
+        app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Blood Bank Auth Service"));
+
+        app.UseRouting();
+
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+        });
+    }
+}
+```
+
+### Step 6: Apply Migrations
+
+Run the migrations to set up the database for `User` and `Role` entities.
+
+1. **Create Migration**:
+    ```bash
+    dotnet ef migrations add InitialUserRoleMigration --project AuthService
+    ```
+
+2. **Apply Migration**:
+    ```bash
+    dotnet ef database update --project AuthService
+    ```
+
+---
+
+### Conclusion
+
+The **Repository Pattern** is now implemented for the **Authentication and Authorization Service** in the Blood Bank Management System. This approach abstracts data access logic into repository classes, providing a more maintainable and testable solution. The service can easily interact with the database via the repositories, and **JWT** tokens are generated for secure, role-based access across the system.
