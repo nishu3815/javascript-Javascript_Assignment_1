@@ -1,0 +1,196 @@
+Here’s a technical design document template for implementing a **Common Logging Service** using Azure Logic Apps, Azure Service Bus, and Azure Log Analytics. This service will be designed to handle logs and auditing information from multiple services or microservices, following the specified workflow.
+
+---
+
+### **Technical Design Document**
+
+#### Project Name
+Common Logging Service
+
+#### Author
+[Your Name]
+
+#### Date
+[Date]
+
+---
+
+## **1. Overview**
+
+This document outlines the technical design of a common logging service implemented using an **Azure Logic App** triggered by **Service Bus Queue** messages. The Logic App workflow will process and validate incoming messages, handle auditing, and log relevant details in **Azure Log Analytics Workspace**. This service will provide centralized logging and auditing for various microservices.
+
+## **2. Scope**
+
+The scope of this service is to:
+1. Process incoming log messages from Service Bus.
+2. Validate, parse, and format messages.
+3. Log specific events in Azure Log Analytics for monitoring and auditing.
+4. Handle potential failures through a structured error-handling mechanism.
+
+## **3. Architecture**
+
+### **3.1 Solution Architecture Diagram**
+
+1. **Service Bus Queue** (message source from microservices) → **Logic App** (main workflow for logging) → **Azure Log Analytics Workspace** (for storing logs)  
+2. **Audit Service Bus** (optional): For pushing messages requiring further auditing.
+3. **Azure SQL Database**: For storing log metadata or additional information as required.
+
+### **3.2 Logic App Workflow Diagram**
+
+The workflow in Logic App will be divided into two primary scopes: **Try** (for main logging logic) and **Catch** (for error handling). Each step includes conditional checks and logging actions in Azure Log Analytics.
+
+---
+
+## **4. Design Components**
+
+### **4.1 Logic App Workflow Design**
+
+The Logic App workflow follows a series of processing and validation steps as outlined:
+
+#### **1. Trigger by Service Bus Queue Message**
+   - **Description**: Initiates the Logic App workflow upon receiving a new message from the Service Bus Queue.
+   - **Configuration**: Connect to the designated Service Bus Queue where services push log messages.
+
+#### **2. Condition: Check if Message is Empty**
+   - **Description**: Checks if the incoming message is empty or null.
+   - **Actions**:
+     - **If Empty**: Add an error log entry to **Azure Log Analytics Workspace** specifying that an empty message was received.
+     - **If Not Empty**: Proceed to the next step.
+   - **Logging Details**:
+     - Event name: `EmptyMessageError`
+     - Fields: Message ID, Timestamp, Source, Error Description.
+
+#### **3. Parse JSON Step**
+   - **Action Type**: Data Operations - Parse JSON
+   - **Description**: Converts the incoming message into a structured JSON format based on a pre-defined schema.
+   - **Error Handling**:
+     - **If Parsing Fails**: Add a log entry to **Azure Log Analytics** with details of the parsing error.
+     - **If Parsing Succeeds**: Continue to the next validation step.
+   - **Logging Details for Parse Errors**:
+     - Event name: `ParseError`
+     - Fields: Message ID, Timestamp, Error Details, and any partial data available.
+
+#### **4. Condition: Validate Required Parameters**
+   - **Description**: Validates that all required parameters are present in the parsed JSON message.
+   - **Actions**:
+     - **If Validation Fails**: Add a log entry to **Azure Log Analytics** detailing the validation error.
+     - **If Validation Succeeds**: Move to the next condition.
+   - **Logging Details for Validation Errors**:
+     - Event name: `ValidationError`
+     - Fields: Message ID, Missing Parameters, Error Description.
+
+#### **5. Condition: Check if Auditing is Required**
+   - **Description**: Checks if the incoming message requires auditing.
+   - **Actions**:
+     - **If Auditing is Not Required**: Log an informational entry in Azure Log Analytics and terminate.
+     - **If Auditing is Required**: Proceed to the next step.
+   - **Logging Details**:
+     - Event name: `AuditCheck`
+     - Fields: Message ID, Timestamp, Audit Status.
+
+#### **6. Send to Common Audit Service Bus (If Auditing is Required)**
+   - **Description**: If auditing is required, push the message to a designated **Audit Service Bus** Queue.
+   - **Configuration**: Set up a Service Bus Queue connection to facilitate auditing messages.
+   - **Logging**: Log an entry to Azure Log Analytics indicating the audit message was queued.
+   - **Logging Details**:
+     - Event name: `AuditQueued`
+     - Fields: Message ID, Queue Name, Timestamp.
+
+#### **7. Insert Details in SQL Database**
+   - **Description**: Insert parsed and validated details into an **Azure SQL Database** table for persistent storage.
+   - **Schema**:
+     - Columns: `MessageID`, `Timestamp`, `Source`, `AuditRequired`, `ProcessingStatus`
+   - **Logging**: Log an entry indicating that the data was successfully added to the database.
+
+#### **8. Parallel Step with Step 6: Log in Azure Log Analytics**
+   - **Description**: Log the processed message details to **Azure Log Analytics Workspace** as an informational event.
+   - **Logging Details**:
+     - Event name: `ProcessingSuccess`
+     - Fields: Message ID, Execution Time, Status.
+
+---
+
+### **4.2 Error Handling: Catch Scope**
+
+If any of the steps in the Try scope fail, the Catch scope will handle the error logging:
+
+- **Error Logging in Azure Log Analytics**:
+  - Log an entry to **Azure Log Analytics** detailing the error.
+  - **Logging Details**:
+    - Event name: `WorkflowError`
+    - Fields: Message ID, Error Details, Step at which it failed, Timestamp.
+
+---
+
+## **5. Azure Log Analytics Design**
+
+### **5.1 Log Structure and Custom Events**
+
+Each log entry in **Azure Log Analytics** will have a consistent structure:
+
+- **Common Fields**:
+  - `MessageID`: Unique ID for each log message.
+  - `Timestamp`: Time the log was created.
+  - `Source`: Name of the service or microservice that generated the log.
+  - `EventName`: Type of log event (e.g., `EmptyMessageError`, `ParseError`, `ValidationError`, etc.).
+
+- **Custom Event Examples**:
+  - `EmptyMessageError`: When a message is received empty.
+  - `ParseError`: When parsing JSON fails.
+  - `AuditQueued`: When auditing is requested, and the message is added to the Audit Service Bus.
+  - `ProcessingSuccess`: When the message is successfully processed and logged.
+
+---
+
+## **6. Security and Compliance**
+
+1. **Access Control**: Use Azure Role-Based Access Control (RBAC) to restrict access to Logic Apps, Service Bus, and Log Analytics to authorized users only.
+2. **Data Encryption**: Ensure all data is encrypted both in transit and at rest.
+3. **Key Vault**: Store sensitive information like Service Bus connection strings in **Azure Key Vault** and retrieve them securely.
+
+---
+
+## **7. Testing and Validation**
+
+1. **Test Scenarios**:
+   - Empty message received and logged correctly.
+   - Parsing failures logged with appropriate error details.
+   - Successful message processing logged correctly.
+   - Error handling by Catch scope in case of failures.
+
+2. **Performance Testing**:
+   - Simulate high message volumes and monitor Log Analytics ingestion rate.
+   - Validate that logging maintains reliability under load.
+
+---
+
+## **8. Deployment and Configuration**
+
+1. **Deployment**:
+   - Use **Azure Resource Manager (ARM)** templates or **Bicep** to deploy Logic App, Service Bus Queues, and Log Analytics Workspace.
+2. **Configuration**:
+   - Store configuration settings, such as connection strings, in **Azure Key Vault** for secure access.
+   - Configure diagnostic settings for detailed log information in Log Analytics.
+
+---
+
+## **9. Monitoring and Maintenance**
+
+1. **Dashboards**:
+   - Set up dashboards in Azure Log Analytics to monitor errors, processing times, and success rates.
+2. **Alerts**:
+   - Configure alerts in Log Analytics for high error rates or critical failures.
+3. **Log Retention**:
+   - Define retention policies for logs in Log Analytics as per compliance requirements.
+
+---
+
+## **10. Appendix**
+
+- **JSON Schemas**: JSON schema for incoming messages.
+- **Sample Log Entries**: Example log structures for Log Analytics.
+- **Configuration Details**: Logic App configuration settings and relevant parameters.
+
+---
+
+This document provides a clear technical framework for implementing the common logging service. Let me know if you need further clarification on any part!
