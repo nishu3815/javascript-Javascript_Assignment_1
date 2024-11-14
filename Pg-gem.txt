@@ -1,0 +1,140 @@
+Here’s the updated code to generate PGP keys, encrypt, and decrypt without requiring a passphrase and using a default user ID. I’ve removed the passphrase handling in both key generation and decryption, and set a default `userId`.
+
+### Updated Code: `Program.cs`
+
+```csharp
+using System;
+using System.IO;
+using System.Text;
+using Org.BouncyCastle.Bcpg.OpenPgp;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Security;
+
+namespace PgpEncryptionApp
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            string defaultUserId = "anonymous";  // Default user ID
+
+            // Generate PGP Keys
+            var (publicKey, privateKey) = GeneratePgpKeys(defaultUserId);
+            Console.WriteLine("PGP Keys generated.");
+
+            // Sample message to encrypt
+            string message = "This is a secret message.";
+            byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+
+            // Encrypt the message with the public key
+            byte[] encryptedMessage = EncryptMessage(publicKey, messageBytes);
+            Console.WriteLine("Message encrypted.");
+
+            // Decrypt the message with the private key
+            byte[] decryptedMessage = DecryptMessage(privateKey, encryptedMessage);
+            string decryptedText = Encoding.UTF8.GetString(decryptedMessage);
+            Console.WriteLine("Decrypted message: " + decryptedText);
+        }
+
+        // Method to Generate PGP Key Pair
+        public static (string publicKey, string privateKey) GeneratePgpKeys(string userId)
+        {
+            var generator = new RsaKeyPairGenerator();
+            generator.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
+            AsymmetricCipherKeyPair keyPair = generator.GenerateKeyPair();
+
+            using var publicKeyStream = new MemoryStream();
+            using var privateKeyStream = new MemoryStream();
+
+            // Generate key ring generator without a passphrase
+            var keyRingGenerator = new PgpKeyRingGenerator(
+                PgpSignature.DefaultCertification,
+                new PgpKeyPair(PublicKeyAlgorithmTag.RsaGeneral, keyPair, DateTime.UtcNow),
+                userId,
+                SymmetricKeyAlgorithmTag.Null,  // No passphrase encryption
+                null,  // No passphrase
+                null,
+                null,
+                new SecureRandom()
+            );
+
+            // Export public key
+            keyRingGenerator.GeneratePublicKeyRing().Encode(publicKeyStream);
+            var publicKey = Convert.ToBase64String(publicKeyStream.ToArray());
+
+            // Export private key
+            keyRingGenerator.GenerateSecretKeyRing().Encode(privateKeyStream);
+            var privateKey = Convert.ToBase64String(privateKeyStream.ToArray());
+
+            return (publicKey, privateKey);
+        }
+
+        // Method to Encrypt a Message
+        public static byte[] EncryptMessage(string publicKeyBase64, byte[] messageBytes)
+        {
+            byte[] publicKeyBytes = Convert.FromBase64String(publicKeyBase64);
+
+            using var inputStream = new MemoryStream(publicKeyBytes);
+            using var outputStream = new MemoryStream();
+            var pgpPubKeyRing = new PgpPublicKeyRing(inputStream);
+            var encryptionKey = pgpPubKeyRing.GetPublicKey();
+
+            var encryptedDataGenerator = new PgpEncryptedDataGenerator(SymmetricKeyAlgorithmTag.Aes256, true, new SecureRandom());
+            encryptedDataGenerator.AddMethod(encryptionKey);
+
+            using (var encryptedOut = encryptedDataGenerator.Open(outputStream, messageBytes.Length))
+            {
+                encryptedOut.Write(messageBytes, 0, messageBytes.Length);
+            }
+
+            return outputStream.ToArray();
+        }
+
+        // Method to Decrypt a Message
+        public static byte[] DecryptMessage(string privateKeyBase64, byte[] encryptedBytes)
+        {
+            byte[] privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
+
+            using var privateKeyStream = new MemoryStream(privateKeyBytes);
+            using var encryptedStream = new MemoryStream(encryptedBytes);
+            using var pgpSecretKeyRing = new PgpSecretKeyRing(privateKeyStream);
+
+            var secretKey = pgpSecretKeyRing.GetSecretKey();
+            var privateKey = secretKey.ExtractPrivateKey(null);  // No passphrase needed
+
+            var encDataList = new PgpObjectFactory(PgpUtilities.GetDecoderStream(encryptedStream)).NextPgpObject() as PgpEncryptedDataList;
+            var encData = (PgpPublicKeyEncryptedData)encDataList[0];
+
+            using var decryptedStream = encData.GetDataStream(privateKey);
+            using var decryptedOutput = new MemoryStream();
+            decryptedStream.CopyTo(decryptedOutput);
+
+            return decryptedOutput.ToArray();
+        }
+    }
+}
+```
+
+### Explanation of Changes
+
+1. **User ID**: 
+   - I’ve set a default `userId` of `"anonymous"`. You can change this to any default value as needed.
+
+2. **Passphrase Removal**:
+   - **Key Generation**: The `PgpKeyRingGenerator` is initialized with `SymmetricKeyAlgorithmTag.Null` to indicate no passphrase encryption.
+   - **Decryption**: In `DecryptMessage`, the `secretKey.ExtractPrivateKey(null)` method is called with `null` for the passphrase, allowing use without a passphrase.
+
+### How to Run the Application
+
+1. **Build and Run**:
+   ```bash
+   dotnet run
+   ```
+2. **Expected Output**:
+   - "PGP Keys generated."
+   - "Message encrypted."
+   - "Decrypted message: This is a secret message."
+
+This setup allows encryption and decryption with a default user ID and no passphrase for the private key. Let me know if you have additional customization needs!
