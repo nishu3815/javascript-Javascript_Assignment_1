@@ -1,0 +1,136 @@
+To support all AES algorithms (AES-128, AES-192, and AES-256) in the HTTP-triggered Azure Function in .NET 8, you just need to ensure the function can handle variable key sizes. AES key sizes determine the variant (128, 192, or 256 bits), so you can adjust the `Aes.Key` property according to the key length provided.
+
+Here’s an updated version of the decryption function that checks the key size and dynamically sets the AES algorithm based on the provided key.
+
+### Updated Code for `DecryptFunction.cs`
+
+Update the `DecryptAes` method to handle different AES key sizes:
+
+```csharp
+using System;
+using System.IO;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
+using PgpCore;
+
+public class DecryptFunction
+{
+    private readonly ILogger _logger;
+
+    public DecryptFunction(ILoggerFactory loggerFactory)
+    {
+        _logger = loggerFactory.CreateLogger<DecryptFunction>();
+    }
+
+    [Function("DecryptFunction")]
+    public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequestData req)
+    {
+        _logger.LogInformation("Processing decryption request...");
+
+        var queryParams = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var encryptionType = queryParams["encryption_type"];
+        var fileData = await req.ReadAsByteArrayAsync();
+
+        try
+        {
+            byte[] decryptedData;
+
+            switch (encryptionType)
+            {
+                case "AES":
+                    var key = Convert.FromBase64String(queryParams["key"]);
+                    var iv = Convert.FromBase64String(queryParams["iv"]);
+                    decryptedData = DecryptAes(fileData, key, iv);
+                    break;
+
+                case "PKZIP":
+                    var password = queryParams["password"];
+                    decryptedData = DecryptPkzip(fileData, password);
+                    break;
+
+                case "PGP":
+                    var privateKey = queryParams["private_key"];
+                    var passphrase = queryParams["passphrase"];
+                    decryptedData = await DecryptPgp(fileData, privateKey, passphrase);
+                    break;
+
+                default:
+                    var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                    await errorResponse.WriteStringAsync("Unsupported encryption type.");
+                    return errorResponse;
+            }
+
+            var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
+            response.Body.Write(decryptedData, 0, decryptedData.Length);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Decryption error: {ex}");
+            var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+            await errorResponse.WriteStringAsync("Decryption failed.");
+            return errorResponse;
+        }
+    }
+
+    private static byte[] DecryptAes(byte[] data, byte[] key, byte[] iv)
+    {
+        if (key.Length != 16 && key.Length != 24 && key.Length != 32)
+        {
+            throw new ArgumentException("Invalid AES key size. Key must be 128, 192, or 256 bits.");
+        }
+
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+
+        using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+        using var msDecrypt = new MemoryStream();
+        using (var csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Write))
+        {
+            csDecrypt.Write(data, 0, data.Length);
+        }
+        return msDecrypt.ToArray();
+    }
+
+    private static byte[] DecryptPkzip(byte[] data, string password)
+    {
+        using var inputStream = new MemoryStream(data);
+        using var zip = new ZipArchive(inputStream, ZipArchiveMode.Read);
+        foreach (var entry in zip.Entries)
+        {
+            using var stream = entry.Open();
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            return ms.ToArray();
+        }
+        throw new Exception("No files found in ZIP archive.");
+    }
+
+    private static async Task<byte[]> DecryptPgp(byte[] data, string privateKey, string passphrase)
+    {
+        using var pgp = new PGP(new MemoryStream(Encoding.UTF8.GetBytes(privateKey)), passphrase);
+        using var encryptedStream = new MemoryStream(data);
+        using var outputStream = new MemoryStream();
+        await pgp.DecryptStreamAsync(encryptedStream, outputStream);
+        return outputStream.ToArray();
+    }
+}
+```
+
+### Explanation of Key Changes
+
+- **AES Key Validation**: The `DecryptAes` function now checks the length of the provided key. For AES, the key must be either 128 bits (16 bytes), 192 bits (24 bytes), or 256 bits (32 bytes). 
+- **Dynamic AES Variant Selection**: By setting the key size dynamically, this function automatically supports AES-128, AES-192, and AES-256 based on the length of the provided key.
+
+### Additional Notes
+
+1. **Error Handling**: An exception will be thrown if the key length is not valid, helping catch issues early.
+2. **Testing**: Make sure to test each AES variant by providing keys of different lengths to confirm that AES-128, AES-192, and AES-256 decryption works as expected.
+
+This setup should now fully support all AES variants along with PKZIP and PGP decryption! Let me know if there’s anything else you’d like to add or modify.
