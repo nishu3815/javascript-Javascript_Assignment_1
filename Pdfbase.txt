@@ -1,0 +1,30 @@
+using iTextSharp.text;
+using iTextSharp.text.pdf;
+
+namespace PDFToBase64
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Create a small PDF file
+            Document doc = new Document();
+            PdfWriter.GetInstance(doc, new FileStream("small_pdf.pdf", FileMode.Create));
+            doc.Open();
+
+            // Add content to the PDF (adjust as needed)
+            Paragraph paragraph = new Paragraph("This is a small PDF file.");
+            doc.Add(paragraph);
+
+            doc.Close();
+
+            // Convert PDF to byte array
+            byte[] pdfBytes = File.ReadAllBytes("small_pdf.pdf");
+
+            // Encode to Base64
+            string base64String = Convert.ToBase64String(pdfBytes);
+
+            Console.WriteLine("Base64 encoded string length: " + base64String.Length);
+        }
+    }
+}
