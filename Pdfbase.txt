@@ -28,3 +28,33 @@ namespace PDFToBase64
         }
     }
 }
+using iText.Kernel.Pdf;
+using iText.Layout.Element;
+using System.IO;
+
+namespace PDFToBase64
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Create a PDF document
+            PdfDocument pdfDoc = new PdfDocument(new PdfWriter("small_pdf.pdf"));
+            Document document = new Document(pdfDoc);
+
+            // Add content to the PDF
+            document.Add(new Paragraph("Hello, World!"));
+
+            // Close the document
+            document.Close();
+
+            // Convert PDF to byte array
+            byte[] pdfBytes = File.ReadAllBytes("small_pdf.pdf");
+
+            // Encode to Base64
+            string base64String = Convert.ToBase64String(pdfBytes);
+
+            Console.WriteLine("Base64 encoded string length: " + base64String.Length);
+        }
+    }
+}
