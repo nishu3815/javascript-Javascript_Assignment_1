@@ -58,3 +58,22 @@ namespace PDFToBase64
         }
     }
 }
+
+
+{
+  "type": "object",
+  "properties": {
+    "form-data": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "string"
+        }
+      },
+      "required": ["file", "metadata"]
+    }
+  }
+}
