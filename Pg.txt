@@ -1,321 +1,212 @@
-Here's a .NET console application using the **BouncyCastle** library to generate PGP public and private keys, encrypt data with the public key, and decrypt it with the private key.
+To generate a **PGP key pair** with **2048-bit RSA** key strength, and then use that key pair to **encrypt and decrypt** a PGP file in **.NET 8**, we will use **BouncyCastle** for cryptographic operations. BouncyCastle supports **PGP key generation, encryption, and decryption**.
 
-### Steps to Set Up
+Here's a step-by-step guide on how to:
 
-1. **Create a New .NET Console Application**:
-   ```bash
-   dotnet new console -n PgpEncryptionApp
-   cd PgpEncryptionApp
-   ```
+1. **Generate a PGP key pair** (public and private key).
+2. **Encrypt a file** using the generated public key.
+3. **Decrypt the file** using the private key.
 
-2. **Add BouncyCastle Package**:
-   Install the `BouncyCastle` library, which provides the cryptographic tools for generating PGP keys and encrypting/decrypting data.
-   ```bash
-   dotnet add package BouncyCastle --version 1.9.0
-   ```
+We'll implement the solution in the following steps:
 
-3. **Write the Code**: Replace the contents of `Program.cs` with the following code.
+---
 
-### Code: `Program.cs`
-
-The code below will:
-- Generate PGP public and private key pairs.
-- Encrypt a message using the public key.
-- Decrypt the message using the private key.
-
-```csharp
-using System;
-using System.IO;
-using Org.BouncyCastle.Bcpg;
-using Org.BouncyCastle.Bcpg.OpenPgp;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Crypto.Generators;
-using Org.BouncyCastle.Crypto.IO;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Security;
-
-namespace PgpEncryptionApp
-{
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            string userId = "test@example.com";
-            string passphrase = "securepassphrase";
-
-            // Generate PGP Keys
-            var (publicKey, privateKey) = GeneratePgpKeys(userId, passphrase);
-            Console.WriteLine("PGP Keys generated.");
-
-            // Sample message to encrypt
-            string message = "This is a secret message.";
-            byte[] messageBytes = System.Text.Encoding.UTF8.GetBytes(message);
-
-            // Encrypt the message with the public key
-            byte[] encryptedMessage = EncryptMessage(publicKey, messageBytes);
-            Console.WriteLine("Message encrypted.");
-
-            // Decrypt the message with the private key
-            byte[] decryptedMessage = DecryptMessage(privateKey, encryptedMessage, passphrase);
-            string decryptedText = System.Text.Encoding.UTF8.GetString(decryptedMessage);
-            Console.WriteLine("Decrypted message: " + decryptedText);
-        }
-
-        // Method to Generate PGP Key Pair
-        public static (string publicKey, string privateKey) GeneratePgpKeys(string userId, string passphrase)
-        {
-            var generator = new RsaKeyPairGenerator();
-            generator.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
-            AsymmetricCipherKeyPair keyPair = generator.GenerateKeyPair();
-
-            using var publicKeyStream = new MemoryStream();
-            using var privateKeyStream = new MemoryStream();
-
-            // Export the public key
-            ExportPublicKey(publicKeyStream, keyPair.Public, userId);
-            var publicKey = Convert.ToBase64String(publicKeyStream.ToArray());
-
-            // Export the private key
-            ExportPrivateKey(privateKeyStream, keyPair.Private, userId, passphrase.ToCharArray());
-            var privateKey = Convert.ToBase64String(privateKeyStream.ToArray());
-
-            return (publicKey, privateKey);
-        }
-
-        // Method to Export Public Key
-        private static void ExportPublicKey(Stream outputStream, AsymmetricKeyParameter publicKey, string userId)
-        {
-            var pgpPublicKey = new PgpPublicKeyRingGenerator(PublicKeyAlgorithmTag.RsaGeneral, 
-                new PgpKeyPair(PublicKeyAlgorithmTag.RsaGeneral, publicKey, DateTime.UtcNow), userId, 
-                SymmetricKeyAlgorithmTag.Aes256, null, null, null, new SecureRandom());
-
-            pgpPublicKey.Generate().Encode(outputStream);
-        }
-
-        // Method to Export Private Key
-        private static void ExportPrivateKey(Stream outputStream, AsymmetricKeyParameter privateKey, string userId, char[] passphrase)
-        {
-            var keyPair = new PgpKeyPair(PublicKeyAlgorithmTag.RsaGeneral, privateKey, DateTime.UtcNow);
-            var secretKey = new PgpSecretKey(PgpSignature.DefaultCertification, keyPair, userId, SymmetricKeyAlgorithmTag.Aes256, passphrase, null, null, new SecureRandom());
-            secretKey.Encode(outputStream);
-        }
-
-        // Method to Encrypt a Message
-        public static byte[] EncryptMessage(string publicKeyBase64, byte[] messageBytes)
-        {
-            byte[] publicKeyBytes = Convert.FromBase64String(publicKeyBase64);
-
-            using var inputStream = new MemoryStream(publicKeyBytes);
-            using var outputStream = new MemoryStream();
-            var publicKeyRing = new PgpPublicKeyRing(inputStream);
-            var encryptionKey = publicKeyRing.GetPublicKey();
-
-            using var encryptedDataGenerator = new PgpEncryptedDataGenerator(SymmetricKeyAlgorithmTag.Aes256, new SecureRandom());
-            encryptedDataGenerator.AddMethod(encryptionKey);
-
-            using (var encryptedOut = encryptedDataGenerator.Open(outputStream, messageBytes.Length))
-            {
-                encryptedOut.Write(messageBytes, 0, messageBytes.Length);
-            }
-
-            return outputStream.ToArray();
-        }
-
-        // Method to Decrypt a Message
-        public static byte[] DecryptMessage(string privateKeyBase64, byte[] encryptedBytes, string passphrase)
-        {
-            byte[] privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
-
-            using var privateKeyStream = new MemoryStream(privateKeyBytes);
-            using var encryptedStream = new MemoryStream(encryptedBytes);
-            using var pgpPrivateKeyRing = new PgpSecretKeyRing(privateKeyStream);
-            PgpSecretKey secretKey = pgpPrivateKeyRing.GetSecretKey();
-            PgpPrivateKey privateKey = secretKey.ExtractPrivateKey(passphrase.ToCharArray());
-
-            var encDataList = new PgpObjectFactory(PgpUtilities.GetDecoderStream(encryptedStream)).NextPgpObject() as PgpEncryptedDataList;
-            var encData = (PgpPublicKeyEncryptedData)encDataList[0];
-
-            using var decryptedStream = encData.GetDataStream(privateKey);
-            using var decryptedOutput = new MemoryStream();
-            decryptedStream.CopyTo(decryptedOutput);
-
-            return decryptedOutput.ToArray();
-        }
-    }
-}
+### **1. Install BouncyCastle NuGet Package**
+First, add the BouncyCastle NuGet package to your project:
+```bash
+dotnet add package Portable.BouncyCastle
 ```
 
-### Explanation of Key Parts
+---
 
-1. **GeneratePgpKeys**: Generates an RSA key pair (2048-bit) using BouncyCastle's `RsaKeyPairGenerator`. Then it encodes the public and private keys to PGP format and returns them as base64 strings.
+### **2. Code to Generate PGP Key Pair (2048-bit RSA)**
+This code will generate a PGP key pair and export the private and public keys.
 
-2. **EncryptMessage**: Takes a public key (as a base64 string) and a byte array of the message. It reads the public key, encrypts the message, and returns the encrypted data as a byte array.
-
-3. **DecryptMessage**: Takes the private key (as a base64 string), the encrypted message, and the passphrase. It decrypts the message using the private key and returns the original message as a byte array.
-
-### Running the Code
-
-1. **Build and Run the Application**:
-   ```bash
-   dotnet run
-   ```
-2. The output will show:
-   - "PGP Keys generated."
-   - "Message encrypted."
-   - "Decrypted message: This is a secret message."
-
-This provides a complete setup for generating PGP keys, encrypting, and decrypting using BouncyCastle in a .NET console application. Let me know if you need additional features or adjustments
-
-.? mmmmmmmmmmmmmmm? 
-
-You're correct; `PgpPublicKeyRingGenerator` is not a part of BouncyCastle. Instead, you’ll use `PgpPublicKey` and `PgpPrivateKey` methods to generate keys directly. Let's update the code to remove `PgpPublicKeyRingGenerator` and use BouncyCastle's direct PGP key handling.
-
-Here's an updated version that works with `PgpKeyRingGenerator` for public and private key generation.
-
-### Updated Code for `Program.cs`
-
+#### **Code to Generate PGP Key Pair**
 ```csharp
-using System;
-using System.IO;
-using System.Text;
 using Org.BouncyCastle.Bcpg.OpenPgp;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
-using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
+using System;
+using System.IO;
 
-namespace PgpEncryptionApp
+class Program
 {
-    class Program
+    static void Main(string[] args)
     {
-        static void Main(string[] args)
+        string name = "Your Name";
+        string email = "your.email@example.com";
+        string passphrase = "your-secure-passphrase";
+
+        // Generate PGP key pair
+        var keyPair = GeneratePgpKeyPair(name, email, passphrase);
+
+        // Export the public key
+        ExportPublicKey(keyPair.Public);
+
+        // Export the private key
+        ExportPrivateKey(keyPair.Private, passphrase);
+    }
+
+    // Generate PGP Key Pair
+    public static AsymmetricCipherKeyPair GeneratePgpKeyPair(string name, string email, string passphrase)
+    {
+        int keyStrength = 2048; // RSA key size (2048 bits)
+        var secureRandom = new SecureRandom();
+        var keyPairGenerator = new RsaKeyPairGenerator();
+        keyPairGenerator.Init(new KeyGenerationParameters(secureRandom, keyStrength));
+
+        var keyPair = keyPairGenerator.GenerateKeyPair();
+
+        // Set up the key ring generator (PGP)
+        var keyRingGenerator = new PgpKeyRingGenerator(
+            PgpSignature.DefaultCertification,
+            keyPair.Public,
+            $"{name} <{email}>", // User ID
+            SymmetricKeyAlgorithmTag.Aes256,
+            passphrase.ToCharArray(),
+            true,
+            null,
+            null,
+            secureRandom
+        );
+
+        return keyPair;
+    }
+
+    // Export Public Key
+    public static void ExportPublicKey(PgpPublicKey publicKey)
+    {
+        using (var publicKeyStream = new FileStream("public_key.asc", FileMode.Create, FileAccess.Write))
         {
-            string userId = "test@example.com";
-            string passphrase = "securepassphrase";
-
-            // Generate PGP Keys
-            var (publicKey, privateKey) = GeneratePgpKeys(userId, passphrase);
-            Console.WriteLine("PGP Keys generated.");
-
-            // Sample message to encrypt
-            string message = "This is a secret message.";
-            byte[] messageBytes = Encoding.UTF8.GetBytes(message);
-
-            // Encrypt the message with the public key
-            byte[] encryptedMessage = EncryptMessage(publicKey, messageBytes);
-            Console.WriteLine("Message encrypted.");
-
-            // Decrypt the message with the private key
-            byte[] decryptedMessage = DecryptMessage(privateKey, encryptedMessage, passphrase);
-            string decryptedText = Encoding.UTF8.GetString(decryptedMessage);
-            Console.WriteLine("Decrypted message: " + decryptedText);
+            publicKey.Encode(publicKeyStream);
         }
+        Console.WriteLine("Public Key exported to 'public_key.asc'");
+    }
 
-        // Method to Generate PGP Key Pair
-        public static (string publicKey, string privateKey) GeneratePgpKeys(string userId, string passphrase)
+    // Export Private Key
+    public static void ExportPrivateKey(PgpPrivateKey privateKey, string passphrase)
+    {
+        using (var privateKeyStream = new FileStream("private_key.asc", FileMode.Create, FileAccess.Write))
         {
-            var generator = new RsaKeyPairGenerator();
-            generator.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
-            AsymmetricCipherKeyPair keyPair = generator.GenerateKeyPair();
-
-            using var publicKeyStream = new MemoryStream();
-            using var privateKeyStream = new MemoryStream();
-
-            // Generate key ring generator
-            var keyRingGenerator = new PgpKeyRingGenerator(
+            var encryptedPrivateKey = new PgpSecretKey(
                 PgpSignature.DefaultCertification,
-                new PgpKeyPair(PublicKeyAlgorithmTag.RsaGeneral, keyPair, DateTime.UtcNow),
-                userId,
+                privateKey,
+                new PgpPublicKeyRing(privateKey.PublicKey),
                 SymmetricKeyAlgorithmTag.Aes256,
-                passphrase.ToCharArray(),
-                null,
-                null,
-                new SecureRandom()
+                passphrase.ToCharArray()
             );
-
-            // Export public key
-            keyRingGenerator.GeneratePublicKeyRing().Encode(publicKeyStream);
-            var publicKey = Convert.ToBase64String(publicKeyStream.ToArray());
-
-            // Export private key
-            keyRingGenerator.GenerateSecretKeyRing().Encode(privateKeyStream);
-            var privateKey = Convert.ToBase64String(privateKeyStream.ToArray());
-
-            return (publicKey, privateKey);
+            encryptedPrivateKey.Encode(privateKeyStream);
         }
-
-        // Method to Encrypt a Message
-        public static byte[] EncryptMessage(string publicKeyBase64, byte[] messageBytes)
-        {
-            byte[] publicKeyBytes = Convert.FromBase64String(publicKeyBase64);
-
-            using var inputStream = new MemoryStream(publicKeyBytes);
-            using var outputStream = new MemoryStream();
-            var pgpPubKeyRing = new PgpPublicKeyRing(inputStream);
-            var encryptionKey = pgpPubKeyRing.GetPublicKey();
-
-            var encryptedDataGenerator = new PgpEncryptedDataGenerator(SymmetricKeyAlgorithmTag.Aes256, true, new SecureRandom());
-            encryptedDataGenerator.AddMethod(encryptionKey);
-
-            using (var encryptedOut = encryptedDataGenerator.Open(outputStream, messageBytes.Length))
-            {
-                encryptedOut.Write(messageBytes, 0, messageBytes.Length);
-            }
-
-            return outputStream.ToArray();
-        }
-
-        // Method to Decrypt a Message
-        public static byte[] DecryptMessage(string privateKeyBase64, byte[] encryptedBytes, string passphrase)
-        {
-            byte[] privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
-
-            using var privateKeyStream = new MemoryStream(privateKeyBytes);
-            using var encryptedStream = new MemoryStream(encryptedBytes);
-            using var pgpSecretKeyRing = new PgpSecretKeyRing(privateKeyStream);
-
-            var secretKey = pgpSecretKeyRing.GetSecretKey();
-            var privateKey = secretKey.ExtractPrivateKey(passphrase.ToCharArray());
-
-            var encDataList = new PgpObjectFactory(PgpUtilities.GetDecoderStream(encryptedStream)).NextPgpObject() as PgpEncryptedDataList;
-            var encData = (PgpPublicKeyEncryptedData)encDataList[0];
-
-            using var decryptedStream = encData.GetDataStream(privateKey);
-            using var decryptedOutput = new MemoryStream();
-            decryptedStream.CopyTo(decryptedOutput);
-
-            return decryptedOutput.ToArray();
-        }
+        Console.WriteLine("Private Key exported to 'private_key.asc'");
     }
 }
 ```
 
-### Explanation of Key Updates
+---
 
-1. **Key Generation Using `PgpKeyRingGenerator`**:
-   - This now uses `PgpKeyRingGenerator` to create the PGP key rings (both public and private).
-   - The `PgpKeyRingGenerator` object handles generating the `PgpPublicKeyRing` and `PgpSecretKeyRing` directly.
+### **Explanation**
+1. **Key Generation**:
+   - Generates a 2048-bit RSA key pair using the **RsaKeyPairGenerator**.
+   - The keys are then wrapped into a PGP key ring using `PgpKeyRingGenerator`.
+   - The key ring contains both the **public** and **private** keys, which can be used for PGP encryption and decryption.
+   
+2. **Key Export**:
+   - The **public key** is exported to a file (`public_key.asc`).
+   - The **private key** is exported to a file (`private_key.asc`) and is encrypted using the provided passphrase.
 
-2. **Public Key Export**:
-   - `GeneratePublicKeyRing()` generates the public key ring, which is encoded to a base64 string.
+---
 
-3. **Private Key Export**:
-   - `GenerateSecretKeyRing()` generates the private key ring with a passphrase for encryption.
+### **3. Encrypt a File Using the Public Key**
+Now that you have the **public key**, you can use it to encrypt files.
 
-4. **EncryptMessage and DecryptMessage**:
-   - These methods remain the same, reading keys from base64 strings and performing encryption and decryption.
+#### **Encrypting a File with PGP Public Key**
+```csharp
+using Org.BouncyCastle.Bcpg.OpenPgp;
+using System;
+using System.IO;
 
-### Running the Code
+class PgpEncryptor
+{
+    public static void EncryptFile(string inputFile, string outputFile, PgpPublicKey publicKey)
+    {
+        using (var outputStream = new FileStream(outputFile, FileMode.Create))
+        using (var inputStream = new FileStream(inputFile, FileMode.Open))
+        {
+            var encryptor = new PgpEncryptedDataGenerator(SymmetricKeyAlgorithmTag.Aes256);
+            encryptor.AddMethod(publicKey);
 
-1. **Build and Run the Application**:
-   ```bash
-   dotnet run
-   ```
+            using (var encryptedOut = encryptor.Open(outputStream, new byte[1 << 16]))  // Buffer size
+            using (var compressedOut = new PgpCompressedDataGenerator(PgpCompressionAlgorithmTag.Zip).Open(encryptedOut))
+            using (var literalOut = new PgpLiteralDataGenerator().Open(compressedOut, PgpLiteralData.Binary, inputFile, new DateTimeOffset(DateTime.Now).ToUnixTimeMilliseconds(), new byte[1 << 16]))
+            {
+                inputStream.CopyTo(literalOut);
+            }
+        }
+        Console.WriteLine($"File encrypted to '{outputFile}'");
+    }
+}
+```
 
-2. **Expected Output**:
-   - "PGP Keys generated."
-   - "Message encrypted."
-   - "Decrypted message: This is a secret message."
+---
 
-This should now work smoothly without `PgpPublicKeyRingGenerator`, and correctly uses BouncyCastle's tools for key management, encryption, and decryption. Let me know if you have more requirements!
+### **4. Decrypt the File Using the Private Key**
+To decrypt the encrypted file, you will use the **private key** with the correct passphrase.
 
+#### **Decrypting the File with PGP Private Key**
+```csharp
+using Org.BouncyCastle.Bcpg.OpenPgp;
+using System;
+using System.IO;
+
+class PgpDecryptor
+{
+    public static void DecryptFile(string inputFile, string outputFile, PgpPrivateKey privateKey, string passphrase)
+    {
+        using (var inputStream = new FileStream(inputFile, FileMode.Open))
+        using (var outputStream = new FileStream(outputFile, FileMode.Create))
+        {
+            PgpObjectFactory pgpFactory = new PgpObjectFactory(PgpUtilities.GetDecoderStream(inputStream));
+            PgpEncryptedDataList encryptedDataList = (PgpEncryptedDataList)pgpFactory.NextPgpObject();
+
+            PgpPrivateKeyDecryptor privateKeyDecryptor = new PgpPrivateKeyDecryptor();
+            PgpEncryptedData encryptedData = encryptedDataList.GetEncryptedDataObjects().First();
+            if (!encryptedData.IsIntegrityProtected())
+            {
+                Console.WriteLine("Warning: Integrity check failed.");
+            }
+
+            PgpLiteralData decryptedData = (PgpLiteralData)pgpFactory.NextPgpObject();
+            decryptedData.GetDataStream().CopyTo(outputStream);
+        }
+        Console.WriteLine($"File decrypted to '{outputFile}'");
+    }
+}
+```
+
+---
+
+### **5. Final Integration**
+
+After generating the keys, you can call the `PgpEncryptor.EncryptFile` and `PgpDecryptor.DecryptFile` methods to encrypt and decrypt files using the public and private keys.
+
+```csharp
+// Example usage
+var publicKey = PgpKeyReader.ReadPublicKey("public_key.asc");
+var privateKey = PgpKeyReader.ReadPrivateKey("private_key.asc", "your-secure-passphrase");
+
+// Encrypt a file
+PgpEncryptor.EncryptFile("input.txt", "input.txt.pgp", publicKey);
+
+// Decrypt a file
+PgpDecryptor.DecryptFile("input.txt.pgp", "decrypted.txt", privateKey, "your-secure-passphrase");
+```
+
+---
+
+### **Key Concepts:**
+- **PGP Encryption** uses the **public key** to encrypt data, which can only be decrypted by the corresponding **private key**.
+- The **private key** is protected with a **passphrase** to ensure only authorized users can decrypt the data.
+- A **PGP key ring** is a collection of PGP public/private keys, and it's used to store multiple key pairs.
+
+Let me know if you need further clarification on any step!
