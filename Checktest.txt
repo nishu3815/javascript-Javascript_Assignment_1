@@ -1,0 +1,70 @@
+function run(inputBody) {
+    // Define required and optional properties
+    const requiredProperties = {
+        "Property1": { maxSize: 10, type: "string" },
+        "Property2": { maxSize: 5, type: "string" },
+        "Property3": { type: "bool" },
+        "Property4": { maxSize: 15, type: "string" },
+        "Property5": { type: "bool" }
+    };
+
+    const optionalProperties = {
+        "Optional1": { maxSize: 8, type: "string" },
+        "Optional2": { maxSize: 6, type: "string" },
+        "Optional3": { type: "bool" },
+        "Optional4": { type: "bool" },
+        "Optional5": { maxSize: 12, type: "string" }
+    };
+
+    // Initialize an array to store invalid property names
+    let invalidProperties = [];
+
+    // Helper function to check property validity
+    function validateProperty(key, value, rules) {
+        // Check for required type
+        if (rules.type === "string" && typeof value !== "string") {
+            return `${key} should be a string`;
+        }
+        if (rules.type === "bool" && typeof value !== "boolean") {
+            return `${key} should be a boolean`;
+        }
+
+        // Check for size constraint if it's a string
+        if (rules.type === "string" && value.length > rules.maxSize) {
+            return `${key} exceeds the maximum size of ${rules.maxSize}`;
+        }
+
+        return null; // Valid property
+    }
+
+    // Validate required properties
+    for (let key in requiredProperties) {
+        const rules = requiredProperties[key];
+        const value = inputBody[key];
+
+        if (value === undefined || value === null || value === "") {
+            invalidProperties.push(`${key} is missing or empty`);
+        } else {
+            const validationError = validateProperty(key, value, rules);
+            if (validationError) {
+                invalidProperties.push(validationError);
+            }
+        }
+    }
+
+    // Validate optional properties
+    for (let key in optionalProperties) {
+        const rules = optionalProperties[key];
+        const value = inputBody[key];
+
+        if (value !== undefined && value !== null && value !== "") {
+            const validationError = validateProperty(key, value, rules);
+            if (validationError) {
+                invalidProperties.push(validationError);
+            }
+        }
+    }
+
+    // Return the list of invalid properties
+    return { InvalidProperties: invalidProperties };
+}
