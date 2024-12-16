@@ -1,0 +1,261 @@
+Here's an updated approach for your Azure Function App in .NET 8 isolated model that connects to SQL through dependency injection and pushes data to Azure Service Bus using Managed Identity.
+
+### **Steps Overview**
+1. **SQL Connection**: Establish a database connection in `Program.cs` and inject it into your function class via dependency injection.
+2. **Service Bus**: Connect to Azure Service Bus using Managed Identity and inject the `ServiceBusClient` into the function class.
+3. **Separate Data Access Class**: Create a data access class to handle SQL queries.
+4. **Push Data to Service Bus**: After fetching the data from SQL, push the results to a Service Bus queue.
+
+---
+
+### **Step 1: Install Required Packages**
+Install the necessary NuGet packages:
+
+```bash
+dotnet add package Microsoft.Azure.Functions.Worker.Extensions.EventGrid
+dotnet add package Microsoft.Data.SqlClient
+dotnet add package Azure.Messaging.ServiceBus
+dotnet add package Microsoft.Extensions.DependencyInjection
+```
+
+---
+
+### **Step 2: Set Up Dependency Injection in `Program.cs`**
+
+**`Program.cs`**:
+In `Program.cs`, set up dependency injection for the SQL connection and the Service Bus client:
+
+```csharp
+using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Data.SqlClient;
+using Azure.Identity;
+
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults(worker =>
+    {
+        worker.UseMiddleware<SqlConnectionMiddleware>();  // Optionally, add middleware if necessary
+    })
+    .ConfigureServices(services =>
+    {
+        // SQL connection via DI
+        services.AddScoped<IDbConnection>((s) =>
+        {
+            var connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
+            return new SqlConnection(connectionString);
+        });
+
+        // ServiceBus client via Managed Identity
+        services.AddSingleton<ServiceBusClient>((s) =>
+        {
+            var client = new ServiceBusClient("<Your Service Bus Namespace>", new DefaultAzureCredential());
+            return client;
+        });
+    })
+    .ConfigureLogging(logging =>
+    {
+        logging.AddConsole();
+        logging.SetMinimumLevel(LogLevel.Information);
+    })
+    .Build();
+
+host.Run();
+```
+
+---
+
+### **Step 3: Create Data Access Class**
+
+Create a class `UserDataAccess.cs` that handles database queries:
+
+**`UserDataAccess.cs`**:
+
+```csharp
+using System.Data;
+using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
+
+public interface IUserDataAccess
+{
+    Task<string> GetUserDetailsAsync(string userId);
+}
+
+public class UserDataAccess : IUserDataAccess
+{
+    private readonly IDbConnection _dbConnection;
+    private readonly ILogger<UserDataAccess> _logger;
+
+    public UserDataAccess(IDbConnection dbConnection, ILogger<UserDataAccess> logger)
+    {
+        _dbConnection = dbConnection;
+        _logger = logger;
+    }
+
+    public async Task<string> GetUserDetailsAsync(string userId)
+    {
+        try
+        {
+            var query = "SELECT Name, Email FROM Users WHERE UserId = @UserId";
+            var command = _dbConnection.CreateCommand();
+            command.CommandText = query;
+            command.Parameters.Add(new SqlParameter("@UserId", userId));
+
+            await _dbConnection.OpenAsync();
+
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    string name = reader["Name"].ToString();
+                    string email = reader["Email"].ToString();
+                    _logger.LogInformation($"User details retrieved: Name = {name}, Email = {email}");
+                    return $"{name}, {email}";
+                }
+                else
+                {
+                    _logger.LogWarning($"No user found for UserId: {userId}");
+                    return null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error querying the database: {ex.Message}");
+            return null;
+        }
+    }
+}
+```
+
+---
+
+### **Step 4: Implement Event Grid Trigger and Logic**
+
+Create the `EventGridFunction.cs` to subscribe to the Event Grid topic, fetch data from SQL, and push the data to Azure Service Bus:
+
+**`EventGridFunction.cs`**:
+
+```csharp
+using System.Text.Json;
+using Azure.Messaging.ServiceBus;
+using Azure.Messaging.EventGrid;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+
+public class EventGridFunction
+{
+    private readonly IUserDataAccess _userDataAccess;
+    private readonly ServiceBusClient _serviceBusClient;
+    private readonly ILogger<EventGridFunction> _logger;
+
+    public EventGridFunction(IUserDataAccess userDataAccess, ServiceBusClient serviceBusClient, ILogger<EventGridFunction> logger)
+    {
+        _userDataAccess = userDataAccess;
+        _serviceBusClient = serviceBusClient;
+        _logger = logger;
+    }
+
+    [Function("EventGridFunction")]
+    public async Task RunAsync([EventGridTrigger] EventGridEvent eventGridEvent)
+    {
+        _logger.LogInformation($"Event received: {eventGridEvent.EventType}");
+
+        // Deserialize the event data to get the UserId
+        var eventData = JsonSerializer.Deserialize<Dictionary<string, string>>(eventGridEvent.Data.ToString());
+        if (eventData == null || !eventData.ContainsKey("UserId"))
+        {
+            _logger.LogError("Invalid event data. 'UserId' key not found.");
+            return;
+        }
+
+        var userId = eventData["UserId"];
+        _logger.LogInformation($"Fetching details for UserId: {userId}");
+
+        // Fetch user details from SQL
+        var userDetails = await _userDataAccess.GetUserDetailsAsync(userId);
+        if (userDetails == null)
+        {
+            _logger.LogWarning($"No details found for UserId: {userId}");
+            return;
+        }
+
+        // Push the user details to Service Bus
+        await SendMessageToServiceBus(userDetails);
+    }
+
+    private async Task SendMessageToServiceBus(string message)
+    {
+        var serviceBusSender = _serviceBusClient.CreateSender("<Your Service Bus Queue Name>");
+        
+        try
+        {
+            var serviceBusMessage = new ServiceBusMessage(message);
+            await serviceBusSender.SendMessageAsync(serviceBusMessage);
+            _logger.LogInformation("Message sent to Service Bus.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error sending message to Service Bus: {ex.Message}");
+        }
+    }
+}
+```
+
+---
+
+### **Step 5: Configure Application Settings**
+
+Make sure you set the required settings for the connection strings and Service Bus namespace:
+
+1. **SQL Connection String**: Set the SQL connection string in the Azure portal's **Application Settings** for your Function App (or in `local.settings.json` for local development).
+   
+   Example:
+   ```json
+   {
+     "IsEncrypted": false,
+     "Values": {
+       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+       "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+       "SqlConnectionString": "Server=<YourServer>;Database=<YourDatabase>;User Id=<YourUserId>;Password=<YourPassword>;"
+     }
+   }
+   ```
+
+2. **Service Bus**: Use Managed Identity in the Azure portal to authenticate and connect to your Service Bus. The `ServiceBusClient` uses `DefaultAzureCredential`, which will automatically use Managed Identity when deployed to Azure.
+
+---
+
+### **Step 6: Deploy the Function App**
+
+Deploy the function app to Azure:
+
+```bash
+func azure functionapp publish <YourFunctionAppName>
+```
+
+---
+
+### **Step 7: Subscribe to the Event Grid Topic**
+
+Once the function is deployed, create the Event Grid subscription to link the Event Grid topic with your function:
+
+```bash
+az eventgrid event-subscription create \
+  --name <SubscriptionName> \
+  --source-resource-id <EventGridTopicResourceId> \
+  --endpoint <FunctionAppUrl>/runtime/webhooks/EventGrid?functionName=EventGridFunction \
+  --endpoint-type webhook
+```
+
+---
+
+### **Summary**
+- **Dependency Injection** is used for both SQL connection (`IDbConnection`) and Service Bus client (`ServiceBusClient`).
+- **Data Access** is handled by a separate `UserDataAccess` class.
+- **Service Bus** is used to push data to a queue after processing the Event Grid message.
+- **Managed Identity** is used for Service Bus authentication.
+
+Let me know if you need further assistance!
