@@ -1,0 +1,120 @@
+To create a **C# Console Application** that reads messages from an **Azure Service Bus topic**, you need to do the following:
+
+1. **Set up Azure Service Bus**: Ensure you have a **Service Bus topic** and **subscription** set up in your Azure account.
+2. **Install NuGet Packages**: You need to install the **Azure.Messaging.ServiceBus** package to interact with Service Bus.
+3. **Create a Console Application**: Write the C# code to connect to the topic subscription and receive messages.
+
+Here’s a step-by-step guide to create a C# console application that reads from an Azure Service Bus topic.
+
+---
+
+### **Step 1: Set Up Azure Service Bus**
+
+1. Create a **Service Bus namespace** in the Azure Portal.
+2. Create a **topic** within that namespace.
+3. Create a **subscription** to the topic, as the console app will receive messages from this subscription.
+
+---
+
+### **Step 2: Create a Console Application**
+
+1. Open **Visual Studio** or your preferred IDE.
+2. Create a new **Console Application** project in C#.
+
+---
+
+### **Step 3: Install NuGet Package**
+
+To interact with Service Bus, you need the **Azure.Messaging.ServiceBus** NuGet package. Run the following command in the **NuGet Package Manager Console**:
+
+```bash
+dotnet add package Azure.Messaging.ServiceBus
+```
+
+Or use the NuGet Package Manager GUI to search and install **Azure.Messaging.ServiceBus**.
+
+---
+
+### **Step 4: Write Code to Read from Service Bus Topic**
+
+Below is an example of a **C# Console App** that listens for messages from a **Service Bus topic subscription**:
+
+```csharp
+using Azure.Messaging.ServiceBus;
+using System;
+using System.Threading.Tasks;
+
+class Program
+{
+    // Define connection string, topic, and subscription
+    static string connectionString = "<Your-Service-Bus-Connection-String>";
+    static string topicName = "<Your-Topic-Name>";
+    static string subscriptionName = "<Your-Subscription-Name>";
+
+    static async Task Main(string[] args)
+    {
+        // Create a ServiceBusClient to interact with the Service Bus
+        var client = new ServiceBusClient(connectionString);
+
+        // Create a ServiceBusReceiver to receive messages from the subscription
+        var receiver = client.CreateReceiver(topicName, subscriptionName);
+
+        Console.WriteLine("Listening for messages...");
+
+        // Continuously listen for messages
+        await foreach (var message in receiver.ReceiveMessagesAsync())
+        {
+            // Process each message
+            Console.WriteLine($"Received message: {message.Body.ToString()}");
+
+            // Complete the message to remove it from the queue
+            await receiver.CompleteMessageAsync(message);
+        }
+
+        // Close the receiver when done
+        await receiver.CloseAsync();
+    }
+}
+```
+
+### **Explanation**:
+- **ServiceBusClient**: This object represents the connection to your Service Bus. You use it to create a **receiver**.
+- **ServiceBusReceiver**: This object allows you to **receive** messages from the topic's **subscription**.
+- **`ReceiveMessagesAsync()`**: This method receives messages from the Service Bus subscription. It will return messages in batches and continue listening for more messages.
+- **`CompleteMessageAsync()`**: After processing a message, this method is used to remove the message from the subscription.
+
+---
+
+### **Step 5: Update Connection Information**
+
+Replace the placeholders in the code with actual values from your Azure Service Bus:
+
+- **`connectionString`**: The connection string for your Service Bus namespace (you can find it in the Azure portal under **Shared Access Policies**).
+- **`topicName`**: The name of your Service Bus topic.
+- **`subscriptionName`**: The name of your subscription within the topic.
+
+Example for **connectionString**:
+```csharp
+static string connectionString = "Endpoint=sb://<YourNamespace>.servicebus.windows.net/;SharedAccessKeyName=<YourPolicyName>;SharedAccessKey=<YourKey>";
+```
+
+---
+
+### **Step 6: Run the Console Application**
+
+Run the application, and it will start listening for incoming messages from the specified **Service Bus subscription**. As messages arrive, the console will print the message body.
+
+### **Additional Notes**:
+
+- **Message Processing**: Inside the loop, you can add any logic to process the message body (e.g., parse it, store it in a database, etc.).
+- **Error Handling**: In a production application, you would want to add proper error handling (e.g., retry logic, logging, etc.).
+- **Message Locking**: If you're doing complex processing, consider using **message locks** to avoid multiple consumers processing the same message at the same time.
+- **Continuous Listening**: This example listens indefinitely. You can stop the app by pressing **Ctrl + C** in the console.
+
+---
+
+### **Summary**
+
+This console app example demonstrates how to read messages from an Azure Service Bus **topic subscription**. It connects to the topic, listens for messages, and processes them as they arrive.
+
+Let me know if you need further clarification or modifications!
