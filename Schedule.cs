@@ -125,3 +125,26 @@ public static class NextScheduleCalculator
         return new DateTimeOffset(resultDay.Year, resultDay.Month, resultDay.Day, baseTime.Hour, baseTime.Minute, 0, baseTime.Offset);
     }
 }
+
+
+///////
+
+
+public class Schedule
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; }
+    public DateTimeOffset StartDateTime { get; set; }
+    public DateTimeOffset? EndDateTime { get; set; }
+    public string RecurrenceType { get; set; } // Enum as string
+    public int Interval { get; set; }
+    public string DaysOfWeek { get; set; } // Comma-separated or JSON
+    public int? DayOfMonth { get; set; }
+    public int? WeekOfMonth { get; set; }
+    public string DayOfWeekInMonth { get; set; }
+    public int? MonthOfYear { get; set; }
+    public string TimeZone { get; set; }
+    public DateTimeOffset? NextOccurrence { get; set; }
+    public bool IsActive { get; set; }
+}
+
