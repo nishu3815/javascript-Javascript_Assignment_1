@@ -130,3 +130,56 @@ private static DateTime GetNthWeekdayOfMonth(int year, int month, DayOfWeek dayO
         throw new ArgumentException($"Month {month}/{year} doesn't have {nth} {dayOfWeek}s");
     return new DateTime(year, month, day);
 }
+
+
+//
+
+
+public static void ValidateScheduleInput(ScheduleInput input)
+{
+    if (input.Interval <= 0)
+        throw new ArgumentException("Interval must be greater than 0");
+
+    if (input.Hour < 0 || input.Hour > 23)
+        throw new ArgumentException("Hour must be between 0 and 23");
+
+    if (input.Minute < 0 || input.Minute > 59)
+        throw new ArgumentException("Minute must be between 0 and 59");
+
+    switch (input.RecurrenceType)
+    {
+        case RecurrenceType.Weekly:
+            if (input.DaysOfWeek == null || !input.DaysOfWeek.Any())
+                throw new ArgumentException("Weekly recurrence requires at least one day of the week");
+            break;
+
+        case RecurrenceType.Monthly:
+            if (input.DayOfMonth.HasValue && (input.WeekOfMonth.HasValue || input.DayOfWeekInMonth.HasValue))
+                throw new ArgumentException("Monthly recurrence must specify either DayOfMonth or WeekOfMonth + DayOfWeekInMonth, not both");
+
+            if (!input.DayOfMonth.HasValue && (!input.WeekOfMonth.HasValue || !input.DayOfWeekInMonth.HasValue))
+                throw new ArgumentException("Monthly recurrence must have DayOfMonth or both WeekOfMonth and DayOfWeekInMonth");
+
+            if (input.DayOfMonth.HasValue && (input.DayOfMonth < 1 || input.DayOfMonth > 31))
+                throw new ArgumentException("DayOfMonth must be between 1 and 31");
+            break;
+
+        case RecurrenceType.Yearly:
+            if (!input.Month.HasValue || input.Month < 1 || input.Month > 12)
+                throw new ArgumentException("Yearly recurrence must include a valid Month (1-12)");
+
+            bool hasDay = input.DayOfMonth.HasValue;
+            bool hasWeekPattern = input.WeekOfMonth.HasValue && input.DayOfWeekInMonth.HasValue;
+
+            if (!hasDay && !hasWeekPattern)
+                throw new ArgumentException("Yearly recurrence must specify either DayOfMonth or WeekOfMonth + DayOfWeekInMonth");
+
+            if (hasDay && hasWeekPattern)
+                throw new ArgumentException("Specify either DayOfMonth or WeekOfMonth + DayOfWeekInMonth for yearly recurrence, not both");
+
+            if (input.DayOfMonth.HasValue && (input.DayOfMonth < 1 || input.DayOfMonth > 31))
+                throw new ArgumentException("DayOfMonth must be between 1 and 31");
+            break;
+    }
+}
+
